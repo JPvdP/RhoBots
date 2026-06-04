@@ -57,13 +57,13 @@ built by [Maarten Grootendorst](https://github.com/MaartenGr).
 
 ```r
 # install.packages("pak")
-pak::pak("your-github-username/Rhobots")
+pak::pak("JPvdP/Rhobots")
 ```
 
 Or clone this repository and install locally:
 
 ```r
-devtools::install("path/to/Rhobots")
+devtools::install("JPvdP/Rhobots")
 ```
 
 ---
