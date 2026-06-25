@@ -15,17 +15,34 @@
 #' @keywords internal
 #' @noRd
 .check_lfs_pointer <- function(path) {
-  first <- tryCatch(readLines(path, n = 1L, warn = FALSE), error = function(e) "")
-  if (length(first) > 0L && startsWith(first, "version https://git-lfs.github.com")) {
+  sz <- file.size(path)
+  # >= 1 MB looks like a real weights file
+  if (!is.na(sz) && sz >= 1048576L) return(invisible(NULL))
+
+  lines <- tryCatch(
+    readLines(path, n = 3L, warn = FALSE),
+    error = function(e) character(0)
+  )
+  text <- paste(lines, collapse = "\n")
+
+  if (grepl("git-lfs.github.com", text, fixed = TRUE)) {
     stop(
-      "The downloaded file is a Git LFS pointer, not actual weights:\n  ", path,
-      "\nThis usually means hfhub fetched the stub instead of the real binary.",
-      "\nFix: set your HuggingFace token so LFS resolves properly:\n",
+      "The downloaded file is a Git LFS pointer, not actual weights:\n  ",
+      path,
+      "\nhfhub fetched the stub instead of the real binary.",
+      "\nFix: set a HuggingFace token, then force-redownload:\n",
       "  Sys.setenv(HUGGING_FACE_HUB_TOKEN = \"hf_...\")\n",
-      "  enc <- load_hf_bert(\"", basename(dirname(path)), "\")",
-      "\nAlternatively, download model.safetensors manually and pass it via weights_path."
+      "  hfhub::hub_download(",
+      "\"<repo_id>\", \"pytorch_model.bin\", force_download = TRUE)"
     )
   }
+
+  stop(
+    "Downloaded weights file is too small (", sz, " bytes) — likely corrupted or an error page:\n  ",
+    path,
+    "\nDelete the cached file and retry, optionally with a HuggingFace token:\n",
+    "  Sys.setenv(HUGGING_FACE_HUB_TOKEN = \"hf_...\")"
+  )
 }
 
 .load_weight_file <- function(path) {
