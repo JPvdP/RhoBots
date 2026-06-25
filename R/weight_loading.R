@@ -97,7 +97,12 @@
   for (pfx in c("bert.", "model.", "0.auto_model.", "auto_model.")) {
     if (startsWith(key, pfx)) key <- substring(key, nchar(pfx) + 1)
   }
-  sub("attention\\.self\\.", "attention.self_.", key)
+  key <- sub("attention\\.self\\.", "attention.self_.", key)
+  # Old HuggingFace BERT checkpoints (converted from TF) name LayerNorm
+  # parameters gamma/beta; PyTorch and our R module use weight/bias.
+  key <- gsub("LayerNorm\\.gamma", "LayerNorm.weight", key, fixed = TRUE)
+  key <- gsub("LayerNorm\\.beta",  "LayerNorm.bias",   key, fixed = TRUE)
+  key
 }
 
 #' Load BERT weights from a checkpoint into a constructed model
