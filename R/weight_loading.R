@@ -14,7 +14,22 @@
 #' @return A named list of `torch_tensor`s.
 #' @keywords internal
 #' @noRd
+.check_lfs_pointer <- function(path) {
+  first <- tryCatch(readLines(path, n = 1L, warn = FALSE), error = function(e) "")
+  if (length(first) > 0L && startsWith(first, "version https://git-lfs.github.com")) {
+    stop(
+      "The downloaded file is a Git LFS pointer, not actual weights:\n  ", path,
+      "\nThis usually means hfhub fetched the stub instead of the real binary.",
+      "\nFix: set your HuggingFace token so LFS resolves properly:\n",
+      "  Sys.setenv(HUGGING_FACE_HUB_TOKEN = \"hf_...\")\n",
+      "  enc <- load_hf_bert(\"", basename(dirname(path)), "\")",
+      "\nAlternatively, download model.safetensors manually and pass it via weights_path."
+    )
+  }
+}
+
 .load_weight_file <- function(path) {
+  .check_lfs_pointer(path)
   if (grepl("\\.safetensors$", path, ignore.case = TRUE)) {
     weights <- safetensors::safe_load_file(path, framework = "torch")
     attr(weights, "metadata") <- NULL

@@ -81,17 +81,24 @@ load_hf_bert <- function(repo_id, weights_path = NULL) {
     message("Using provided weights file: ", weights_path)
   } else {
     weights_path <- NULL
+    download_errors <- list()
     for (filename in c("model.safetensors", "pytorch_model.bin")) {
-      weights_path <- tryCatch(hfhub::hub_download(repo_id, filename),
-                               error = function(e) NULL)
+      weights_path <- tryCatch(
+        hfhub::hub_download(repo_id, filename),
+        error = function(e) { download_errors[[filename]] <<- conditionMessage(e); NULL }
+      )
       if (!is.null(weights_path)) {
         message("Using weights file: ", filename)
         break
       }
     }
-    if (is.null(weights_path))
-      stop("Could not find model weights in ", repo_id,
-           ". Tried model.safetensors and pytorch_model.bin.")
+    if (is.null(weights_path)) {
+      detail <- if (length(download_errors) > 0)
+        paste0("\n  ", names(download_errors), ": ", unlist(download_errors), collapse = "")
+      else ""
+      stop("Could not download model weights from ", repo_id,
+           ". Tried model.safetensors and pytorch_model.bin.", detail)
+    }
   }
 
   # --- tokenizer ---
