@@ -250,3 +250,134 @@ visualize_topics <- function(fit,
     margin = list(t = 30L, r = 20L)
   )
 }
+
+#' Visualise topic quality metrics
+#'
+#' Produces a four-panel interactive dashboard (via \pkg{plotly}) from a
+#' \code{topic_quality} object returned by \code{\link{topic_quality}}.
+#' The panels are:
+#' \enumerate{
+#'   \item \strong{Silhouette per topic} — horizontal bars coloured from red
+#'     (negative) through yellow (zero) to green (positive).
+#'   \item \strong{Topic size distribution} — document counts per topic, with
+#'     the noise class shown separately.
+#'   \item \strong{Centroid similarity} — pairwise cosine similarity matrix
+#'     between topic centroids (lower = more distinct).
+#'   \item \strong{Vocabulary overlap} — pairwise Jaccard similarity of the
+#'     top-\eqn{N} c-TF-IDF term sets (lower = less overlap).
+#' }
+#'
+#' @param q A \code{topic_quality} object from \code{\link{topic_quality}}.
+#' @param fit Optional \code{bertopic_fit} used to resolve short topic labels.
+#'   When \code{NULL} topics are labelled \code{T0}, \code{T1}, etc.
+#' @param width,height Plot dimensions in pixels (defaults: 900 x 750).
+#' @return A \code{plotly} figure object.
+#' @export
+visualize_quality <- function(q, fit = NULL, width = 900L, height = 750L) {
+  if (!requireNamespace("plotly", quietly = TRUE))
+    stop("Please install.packages('plotly') to use visualize_quality().")
+  if (!inherits(q, "topic_quality"))
+    stop("'q' must be a topic_quality object from topic_quality().")
+
+  # --- Topic labels -----------------------------------------------------------
+  topics <- sort(as.integer(names(q$distribution$counts)))
+  lbls <- if (!is.null(fit)) {
+    vapply(topics, function(t)
+      .format_topic_label(
+        fit$topic_labels[[as.character(t)]] %||% as.character(t), n_words = 3L
+      ), character(1L))
+  } else {
+    paste0("T", topics)
+  }
+  t_chr <- as.character(topics)
+
+  # --- Panel 1: Silhouette per topic ------------------------------------------
+  sil_raw  <- as.numeric(q$silhouette$per_topic[t_chr])
+  sil_cl   <- pmax(-1, pmin(1, sil_raw))
+  col_fn   <- grDevices::colorRamp(c("#d73027", "#fee08b", "#1a9850"))
+  sil_hex  <- apply(col_fn((sil_cl + 1) / 2), 1L, function(rgb)
+    grDevices::rgb(rgb[1L], rgb[2L], rgb[3L], maxColorValue = 255))
+
+  p_sil <- plotly::plot_ly(
+    x = sil_raw, y = lbls, type = "bar", orientation = "h",
+    marker = list(color = sil_hex),
+    hovertemplate = "<b>%{y}</b><br>Silhouette: %{x:.3f}<extra></extra>",
+    showlegend = FALSE
+  ) |> plotly::layout(
+    xaxis = list(title = "Silhouette score", range = c(-1, 1),
+                 zeroline = TRUE, zerolinecolor = "#888888"),
+    yaxis = list(title = "", categoryorder = "array",
+                 categoryarray = rev(lbls), tickfont = list(size = 10L)),
+    title       = list(text = "<b>Silhouette</b>", x = 0,
+                       font = list(size = 12L)),
+    plot_bgcolor = "#f7f7f7"
+  )
+
+  # --- Panel 2: Topic size distribution ---------------------------------------
+  cnt_vals  <- as.integer(q$distribution$counts[t_chr])
+  all_lbls  <- c(lbls, "Noise (-1)")
+  all_cnts  <- c(cnt_vals, q$n_noise)
+  all_cols  <- c(rep("#5b9bd5", length(lbls)), "#cccccc")
+
+  p_dist <- plotly::plot_ly(
+    x = all_cnts, y = all_lbls, type = "bar", orientation = "h",
+    marker = list(color = all_cols),
+    hovertemplate = "<b>%{y}</b><br>Documents: %{x}<extra></extra>",
+    showlegend = FALSE
+  ) |> plotly::layout(
+    xaxis = list(title = "Documents"),
+    yaxis = list(title = "", categoryorder = "total ascending",
+                 tickfont = list(size = 10L)),
+    title = list(text = "<b>Topic distribution</b>", x = 0,
+                 font = list(size = 12L)),
+    plot_bgcolor = "#f7f7f7"
+  )
+
+  # --- Shared heatmap helpers -------------------------------------------------
+  rwr_scale <- list(
+    list(c = 0,   color = "#053061"),
+    list(c = 0.5, color = "#f7f7f7"),
+    list(c = 1,   color = "#67001f")
+  )
+  # Convert to the list-of-lists format plotly expects
+  cs <- lapply(rwr_scale, function(x) list(x$c, x$color))
+
+  .heatmap <- function(mat, title_text, bar_title) {
+    m <- mat
+    diag(m) <- NA_real_          # suppress diagonal so scale focuses on off-diag
+    plotly::plot_ly(
+      z = m, x = lbls, y = lbls, type = "heatmap",
+      colorscale  = cs, zmin = 0, zmax = 1,
+      hovertemplate = "<b>%{x}</b> vs <b>%{y}</b><br>%{z:.3f}<extra></extra>",
+      colorbar = list(title = bar_title, len = 0.45, thickness = 12L)
+    ) |> plotly::layout(
+      xaxis = list(title = "", tickangle = -40L, tickfont = list(size = 9L)),
+      yaxis = list(title = "", tickfont = list(size = 9L),
+                   autorange = "reversed"),
+      title = list(text = title_text, x = 0, font = list(size = 12L))
+    )
+  }
+
+  # --- Panel 3: Centroid similarity -------------------------------------------
+  sim_mat <- q$separation$centroid_similarity[t_chr, t_chr, drop = FALSE]
+  p_sim   <- .heatmap(sim_mat,
+                      "<b>Centroid similarity</b>  (↓ better)",
+                      "Cosine sim")
+
+  # --- Panel 4: Jaccard overlap -----------------------------------------------
+  jac_mat <- q$overlap$jaccard_matrix[t_chr, t_chr, drop = FALSE]
+  p_jac   <- .heatmap(jac_mat,
+                      "<b>Vocabulary overlap</b>  (↓ better)",
+                      "Jaccard")
+
+  # --- Combine ----------------------------------------------------------------
+  plotly::subplot(p_sil, p_dist, p_sim, p_jac,
+                  nrows = 2L, margin = 0.1,
+                  shareX = FALSE, shareY = FALSE) |>
+    plotly::layout(
+      width         = width,
+      height        = height,
+      paper_bgcolor = "white",
+      showlegend    = FALSE
+    )
+}
