@@ -100,8 +100,8 @@
   key <- sub("attention\\.self\\.", "attention.self_.", key)
   # Old HuggingFace BERT checkpoints (converted from TF) name LayerNorm
   # parameters gamma/beta; PyTorch and our R module use weight/bias.
-  key <- gsub("LayerNorm\\.gamma", "LayerNorm.weight", key, fixed = TRUE)
-  key <- gsub("LayerNorm\\.beta",  "LayerNorm.bias",   key, fixed = TRUE)
+  key <- gsub("LayerNorm.gamma", "LayerNorm.weight", key, fixed = TRUE)
+  key <- gsub("LayerNorm.beta",  "LayerNorm.bias",   key, fixed = TRUE)
   key
 }
 
