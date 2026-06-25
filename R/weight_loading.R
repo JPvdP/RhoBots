@@ -54,11 +54,27 @@
     return(weights)
   }
   if (grepl("\\.(bin|pth|pt)$", path, ignore.case = TRUE)) {
-    # torch::load_state_dict reads PyTorch's modern zipfile-pickle format,
-    # which HuggingFace `pytorch_model.bin` files have used since PyTorch
-    # 1.6 (2020).  Note: this loader cannot remap CUDA-saved tensors to
-    # CPU; for that case, the upstream model needs to be converted to
-    # safetensors first.
+    # Detect pre-1.6 PyTorch legacy pickle format (magic byte 0x80).
+    # PyTorchStreamReader (used by load_state_dict) only handles the zip
+    # container introduced in PyTorch 1.6 (2020); old-format files need
+    # Python to convert first.
+    magic <- tryCatch(readBin(path, what = "raw", n = 2L),
+                      error = function(e) raw(0))
+    if (length(magic) >= 1L && magic[1] == as.raw(0x80)) {
+      stop(
+        "This model's pytorch_model.bin uses the legacy pickle format",
+        " (pre-PyTorch 1.6),\n",
+        "which R torch cannot read. Convert it to safetensors first:\n\n",
+        "  # In Python (pip install torch safetensors huggingface_hub):\n",
+        "  import torch\n",
+        "  from safetensors.torch import save_file\n",
+        "  sd = torch.load(\"pytorch_model.bin\", map_location=\"cpu\",",
+        " weights_only=False)\n",
+        "  save_file(sd, \"model.safetensors\")\n\n",
+        "Then pass the converted file via:\n",
+        "  load_hf_bert(\"<repo_id>\", weights_path = \"/path/to/model.safetensors\")"
+      )
+    }
     weights <- torch::load_state_dict(path)
     return(as.list(weights))
   }
