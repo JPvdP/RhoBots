@@ -148,7 +148,7 @@ load_bert_weights <- function(model, weights_path, strict = FALSE) {
   if (strict && length(missing) > 0)
     stop("Strict load: ", length(missing), " expected params missing.")
 
-  model$load_state_dict(loadable)
+  model$load_state_dict(loadable, strict = FALSE)
   message(sprintf("Loaded %d / %d expected parameters from %s",
                   length(loadable), length(expected),
                   basename(weights_path)))
