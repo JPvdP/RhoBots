@@ -7,13 +7,20 @@ abstract: >
   extraction---without any dependency on Python, conda, or \pkg{reticulate}.
   Every stage runs natively in R through \pkg{torch}, \pkg{safetensors},
   \pkg{tok}, \pkg{uwot}, and \pkg{dbscan}.  The package exposes a modular,
-  pluggable architecture in which dimensionality-reduction and clustering
-  algorithms can be swapped independently, mirrors the accessor API of the
-  original Python package, supports out-of-sample prediction, post-fit topic
-  manipulation, and dynamic topic modeling over time.  We describe the design
-  and implementation, demonstrate the package on a corpus of scientific
-  abstracts, and compare the approach to established R topic models such as
-  Latent Dirichlet Allocation and the Structural Topic Model.
+  pluggable architecture in which dimensionality-reduction, clustering, and
+  representation algorithms can be swapped independently.  Two representation
+  models extend the default bag-of-words vocabulary: a POS-filtered model
+  (via \CRANpkg{udpipe}) that restricts terms to selected Universal POS tags
+  or multi-word POS-pattern phrases, and a C-value model
+  \citep{frantzi2000cvalue} that selects n-grams based on their statistical
+  evidence as domain-specific multi-word terms.  Beyond the core pipeline the
+  package provides seven advanced analysis tools: zero-shot topic
+  classification, topic stability analysis, lexical coherence assessment,
+  guided topic modeling, LLM-based topic labeling, structured model
+  persistence, and class-conditional group comparison.  We describe the
+  design, demonstrate the package on a corpus of public-domain books sourced
+  via Project Gutenberg, and compare the approach to established R topic
+  models such as Latent Dirichlet Allocation and the Structural Topic Model.
 author:
   - name: J.P.G. van der Pol
     affiliation: Utrecht University
@@ -94,10 +101,13 @@ knowledge directly.
 The rest of this paper is organised as follows.  Section \@ref(sec:algorithm)
 describes the BERTopic algorithm and the specific choices made in Rhobots.
 Section \@ref(sec:design) details the package design and S3 class
-architecture.  Section \@ref(sec:usage) demonstrates the main user-facing
-functions.  Section \@ref(sec:example) presents a worked example on a corpus
-of scientific abstracts.  Section \@ref(sec:validation) validates the R
+architecture.  Section \@ref(sec:usage) documents all user-facing functions,
+including the pluggable representation models and seven advanced analysis
+tools.  Section \@ref(sec:example) presents a worked example on a corpus of
+scientific abstracts.  Section \@ref(sec:validation) validates the R
 implementation against the Python \texttt{sentence-transformers} reference.
+Section \@ref(sec:casestudy) applies the full pipeline to a corpus of
+public-domain books as a realistic end-to-end case study.
 Section \@ref(sec:discussion) compares Rhobots to existing R topic models
 and outlines limitations.  Section \@ref(sec:conclusion) concludes.
 
@@ -213,7 +223,8 @@ supporting the `visualize_topic_flow()` Sankey diagram.
 
 ## Pluggable Pipeline Models
 
-Two S3 generics form the extension points of the pipeline:
+Three extension points form the backbone of the pipeline.  The first two are
+S3 generics:
 
 ```{r generics, eval=FALSE}
 dim_reduce(model, X, seed, verbose)  # returns list(embedding, model)
@@ -223,9 +234,21 @@ cluster_docs(model, X, seed)         # returns list(labels, model)
 ```
 
 Any object implementing these generics can be passed to `fit_bertopic()` via
-the `dim_reduction_model` and `cluster_model` arguments.  This design means
-that users can add new reduction or clustering algorithms without modifying
-the core pipeline code.
+the `dim_reduction_model` and `cluster_model` arguments, allowing new
+reduction or clustering algorithms to be added without modifying the core
+pipeline code.
+
+The third extension point is `representation_model`.  This argument controls
+how the document-term matrix is built for the c-TF-IDF step.  Two constructors
+are provided: `pos_representation()` restricts the vocabulary to tokens
+matching specified Universal POS tags (using \CRANpkg{udpipe} for annotation)
+and optionally extracts multi-word phrases matching POS-tag sequences;
+`cvalue_representation()` selects n-grams using the C-value method
+\citep{frantzi2000cvalue}, which scores candidate multi-word terms by their
+frequency discounted by how often they appear as part of a longer term.
+When `representation_model = NULL` (the default) the existing
+document-frequency-filtered bag-of-words vocabulary is used unchanged,
+preserving full backward compatibility.
 
 ## HuggingFace Integration
 
@@ -249,11 +272,12 @@ step in an analysis workflow.
 
 # Package Functions {#sec:usage}
 
-\pkg{Rhobots} organises its functions into seven groups: loading transformer
-models, producing embeddings, fitting topic models, inspecting results,
-post-fit manipulation, dynamic topic modeling, and visualization.  This
-section describes each function, the problem it solves, and why it is important
-for a practical topic-modeling workflow.
+\pkg{Rhobots} organises its functions into nine groups: loading transformer
+models, producing embeddings, fitting topic models, representation models,
+inspecting results, post-fit manipulation, visualization, dynamic topic
+modeling, and seven advanced analysis tools.  This section describes each
+function, the problem it solves, and why it is important for a practical
+topic-modeling workflow.
 
 ## Loading Transformer Models
 
@@ -372,16 +396,16 @@ dimensionality reduction and clustering.  It executes the four-stage pipeline
 described in Section \@ref(sec:algorithm) and returns a `bertopic_fit` object
 containing the full fitted state.
 
-Key arguments control every aspect of the fit.  `dim_reduction_model` and
-`cluster_model` accept pluggable model objects (see Section
-\@ref(sec:design)); legacy keyword arguments (`umap_n_neighbors`,
-`hdbscan_min_pts`, etc.) are provided for convenience and build the default
-`umap_reduction()` and `hdbscan_clustering()` objects automatically.
-`ngram_range` controls whether unigrams only (`c(1L, 1L)`) or unigrams and
-bigrams (`c(1L, 2L)`) are included in the document-term matrix.
-`reduce_frequent_words` applies a square-root dampening to the class-TF before
-c-TF-IDF scoring, which improves interpretability when a small number of
-terms dominates the vocabulary of a topic.
+Key arguments control every aspect of the fit.  `dim_reduction_model`,
+`cluster_model`, and `representation_model` accept pluggable model objects
+(see Sections \@ref(sec:design) and Representation Models below); legacy
+keyword arguments (`umap_n_neighbors`, `hdbscan_min_pts`, etc.) are provided
+for convenience and build the default objects automatically.  `ngram_range`
+controls whether unigrams only (`c(1L, 1L)`) or unigrams and bigrams
+(`c(1L, 2L)`) are included in the default bag-of-words DTM (ignored when a
+`representation_model` is supplied).  `reduce_frequent_words` applies a
+square-root dampening to the class-TF before c-TF-IDF scoring, which improves
+interpretability when a small number of terms dominates a topic's vocabulary.
 
 ```{r fit-ex, eval=FALSE}
 fit <- fit_bertopic(
@@ -477,6 +501,77 @@ fit <- fit_bertopic(docs = docs, embeddings = emb,
 fit <- fit_bertopic(docs = docs, embeddings = emb,
                     cluster_model = agglomerative_clustering(k = 12L,
                                                              linkage = "ward.D2"))
+```
+
+## Representation Models
+
+The default c-TF-IDF vocabulary treats every token as an equally valid topic
+descriptor.  \pkg{Rhobots} provides two alternative representation models that
+give finer control over which terms characterise each topic.
+
+**`pos_representation(pos, patterns, lemmatize, language, model_dir)`** builds
+the document-term matrix from tokens whose Universal POS (UPOS) tag matches
+`pos`, rather than from all tokens.  The default `c("NOUN","PROPN")` focuses
+topic representations on entities and domain concepts; `c("VERB")` produces
+action-oriented topic descriptions useful for corpora about processes or events;
+`c("ADJ","NOUN")` retains attributive adjectives alongside the nouns they
+modify.  The optional `patterns` argument accepts a list of consecutive UPOS
+sequences---for example `list(c("ADJ","NOUN"), c("NOUN","NOUN"))`---that are
+extracted as multi-word units and added to the vocabulary alongside individual
+tokens, allowing the model to surface compound terms such as
+\emph{renewable energy} or \emph{climate change}.
+POS annotation uses the \CRANpkg{udpipe} package
+\citep{udpipe}, which downloads a Universal Dependencies
+model ($\approx$15 MB) for the chosen language on first use and caches it for
+subsequent runs.  Because POS filtering naturally removes function words
+(determiners, prepositions, conjunctions), no additional stopword list is needed
+when this model is active.
+
+**`cvalue_representation(max_n, threshold, min_freq)`** implements the C-value
+method of \citet{frantzi2000cvalue}.  For each candidate n-gram $t$ of length
+$|t| \geq 2$ and corpus frequency $f(t)$, let $P(t)$ denote the set of longer
+candidate terms that contain $t$ as a contiguous sub-sequence:
+
+$$
+C\text{-value}(t) = \log_2|t| \times
+\begin{cases}
+f(t) & \text{if } P(t) = \emptyset \\[4pt]
+\displaystyle f(t) - \frac{1}{|P(t)|}\sum_{a \in P(t)} f(a) & \text{otherwise}
+\end{cases}
+$$
+
+The key insight is that a bigram whose occurrences are almost entirely absorbed
+by a longer phrase should score near zero: the phrase, not its constituent
+bigram, is the relevant term.  For example, if \emph{sea level} appears
+exclusively as part of \emph{sea level rise}, its C-value is driven to zero
+while \emph{sea level rise} scores positively.  Only n-grams whose C-value
+exceeds `threshold` are kept in the DTM alongside standard unigrams.
+The `cvalue_terms()` function is also exported as a standalone extraction tool.
+
+```{r repr-ex, eval=FALSE}
+# POS-filtered: nouns and proper nouns only (default)
+fit <- fit_bertopic(docs = docs, embeddings = emb,
+                    representation_model = pos_representation())
+
+# Verb-focused: action- and process-oriented topic descriptions
+fit <- fit_bertopic(docs = docs, embeddings = emb,
+                    representation_model = pos_representation(pos = c("VERB")))
+
+# Noun phrases: extract ADJ+NOUN and NOUN+NOUN sequences as units
+fit <- fit_bertopic(docs = docs, embeddings = emb,
+                    representation_model = pos_representation(
+                      pos      = c("NOUN", "PROPN"),
+                      patterns = list(c("ADJ", "NOUN"), c("NOUN", "NOUN"))
+                    ))
+
+# C-value multi-word term selection (Frantzi et al. 2000)
+fit <- fit_bertopic(docs = docs, embeddings = emb,
+                    representation_model = cvalue_representation(max_n    = 4L,
+                                                                  threshold = 1.0))
+
+# Inspect C-value scores directly as a standalone analysis
+cv <- cvalue_terms(docs, max_n = 3L, min_freq = 3L, threshold = 0.0)
+head(cv, 10)
 ```
 
 ## Inspecting Fitted Topics
@@ -796,6 +891,134 @@ flow <- fit_topics_over_time(
 )
 print(flow)
 visualize_topic_flow(flow, color_by = "status")
+```
+
+## Advanced Analysis
+
+Beyond the core pipeline, \pkg{Rhobots} provides seven functions that address
+common practical needs in computational social-science and text-mining
+workflows.
+
+### Zero-Shot Topic Classification
+
+**`zero_shot_topics(docs, labels, embeddings, encoder, threshold, ...)`** assigns
+documents to a user-defined set of topic labels---specified as plain-language
+phrases---without fitting an unsupervised model.  For each document it computes
+cosine similarity between the document's embedding and each label's embedding;
+documents are assigned to the most similar label.  An optional `threshold`
+marks documents as noise ($-1$) when no label exceeds the minimum similarity.
+The return value is a full `bertopic_fit` object, so all accessor and
+visualization functions work immediately.  Zero-shot classification is useful
+when a target taxonomy is known in advance, such as standard journal-subject
+categories or policy-relevant themes.
+
+```{r zs-ex, eval=FALSE}
+labels <- c("renewable energy", "climate policy", "biodiversity conservation",
+            "water governance", "food security")
+fit_zs <- zero_shot_topics(docs, labels, encoder = enc, threshold = 0.3)
+```
+
+### Topic Stability Analysis
+
+**`stability_analysis(docs, embeddings, n_runs, seeds, ..., verbose)`** refits the
+model `n_runs` times with different random seeds and compares the resulting
+cluster assignments pairwise using the Adjusted Rand Index (ARI).  Values near
+1 indicate highly stable assignments; values near 0 suggest sensitivity to
+initialisation that warrants further hyperparameter tuning.
+`visualize_stability()` renders the per-pair ARI matrix as an interactive
+heatmap.
+
+```{r stab-ex, eval=FALSE}
+stab <- stability_analysis(docs, embeddings = emb, n_runs = 10L,
+                           hdbscan_min_pts = 5L, ngram_range = c(1L, 2L))
+print(stab)
+visualize_stability(stab)
+```
+
+### Lexical Coherence
+
+**`topic_coherence(fit, top_n, measure)`** quantifies the internal consistency of
+each topic's top terms.  The NPMI (Normalised Pointwise Mutual Information)
+measure computes the average pairwise co-occurrence strength of the top-$n$
+terms, normalised to $[-1, 1]$; the CV measure computes smoothed log
+conditional probabilities.  Both rely on the corpus stored in `fit$dtm`
+and require no external resources.  High coherence confirms that the vocabulary
+of a topic consists of terms that genuinely co-occur in the same documents
+rather than terms that are each individually frequent but topically unrelated.
+
+```{r coh-ex, eval=FALSE}
+coh <- topic_coherence(fit, top_n = 10L, measure = "npmi")
+print(coh)
+```
+
+### Guided Topic Modeling
+
+**`guided_fit_bertopic(docs, seed_topic_list, embeddings, encoder,
+n_anchor_weight, ...)`** steers unsupervised clustering towards user-defined
+themes by injecting "anchor" documents constructed from seed-word lists before
+fitting.  Each seed topic's words are concatenated into a text string and
+appended `n_anchor_weight` times to the real corpus so that their embeddings
+attract nearby documents into the same cluster.  After fitting, anchor
+documents are discarded and topic terms are recomputed on the real corpus
+alone.  Guided modeling is useful when domain knowledge specifies a set of
+themes and the analyst wants the model to organise the corpus around them
+rather than discovering arbitrary structure.
+
+```{r guided-ex, eval=FALSE}
+seeds <- list(c("climate", "warming", "emissions"),
+              c("labour", "wages", "capital"),
+              c("species", "evolution", "natural selection"))
+fit_g <- guided_fit_bertopic(docs, seed_topic_list = seeds, embeddings = emb)
+```
+
+### LLM-Based Topic Labeling
+
+**`label_topics_llm(fit, provider, api_key, model, top_n_terms,
+n_representative_docs, custom_prompt)`** sends each topic's top c-TF-IDF terms
+and representative documents to an external large language model (Anthropic
+Claude or OpenAI GPT) and replaces the auto-generated slug labels with the
+model's three-to-five word response.  A `custom_prompt` argument overrides the
+default template; the placeholders `{terms}` and `{docs}` are substituted
+before sending.  Requires the \CRANpkg{httr2} package and a valid API key.
+
+```{r llm-ex, eval=FALSE}
+fit <- label_topics_llm(fit, provider = "anthropic",
+                        api_key = Sys.getenv("ANTHROPIC_API_KEY"),
+                        model   = "claude-haiku-4-5-20251001")
+```
+
+### Structured Save and Load
+
+**`save_bertopic(fit, path, include_embeddings, include_dtm, compress)`** and
+**`load_bertopic(path)`** persist a fitted model to a directory.  The
+directory contains a human-readable `metadata.json` summary, a compact
+`fit.rds` for the fitted object, and optional `embeddings.rds` and `dtm.rds`
+for the heavy matrices.  Separating the large matrices means the directory can
+be inspected or parsed without loading gigabytes into memory.
+
+```{r save-ex, eval=FALSE}
+save_bertopic(fit, "gutenberg_model/", include_embeddings = TRUE)
+fit  <- load_bertopic("gutenberg_model/")
+```
+
+### Class-Conditional Group Comparison
+
+**`compare_topics(fit, groups, method, min_count)`** tests which topics are over-
+or under-represented in user-defined groups---publication year, country,
+experimental arm---relative to a null model of independence.  Two statistics
+are supported: signed chi-square contributions ($\text{sign}(O-E)
+\cdot \sqrt{(O-E)^2/E}$) and Laplace-smoothed $\log_2$ ratios.
+`visualize_comparison()` renders the results as a diverging blue/white/red
+heatmap (one cell per topic $\times$ group combination).  This bridges topic
+modeling and group-level inference: rather than asking only "what topics
+exist?", researchers can ask "which topics are more prevalent among papers
+from Country X, in Year Y, or in treatment arm Z?"
+
+```{r compare-ex, eval=FALSE}
+groups <- corpus$title                             # source book as group variable
+comp   <- compare_topics(fit, groups = groups, method = "chi2")
+print(comp)
+visualize_comparison(comp)
 ```
 
 # Worked Example {#sec:example}
@@ -1491,10 +1714,11 @@ this for iterative analyses, and GPU acceleration is available when \pkg{torch}
 is installed with CUDA support.  Second, HDBSCAN can be sensitive to its
 `min_pts` hyperparameter; too-small values produce many small, noisy topics
 while too-large values merge semantically distinct themes.  Cross-validation
-on topic coherence metrics is advisable.  Third, \pkg{Rhobots} does not
-currently implement the full range of representation refinement models
-available in the Python BERTopic package (e.g., KeyBERT-inspired or
-GPT-based representations).  These remain areas for future development.
+on topic coherence metrics is advisable.  Third, while \pkg{Rhobots} provides POS-filtered and C-value representation
+models as well as LLM-based post-hoc label generation, it does not yet offer a
+native KeyBERT-inspired term selector (which ranks terms by their semantic
+similarity to the topic centroid rather than by class TF-IDF) or a BERT-score
+re-ranker.  These remain natural areas for future development.
 
 ## Reproducibility
 
