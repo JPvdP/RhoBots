@@ -148,7 +148,17 @@ load_bert_weights <- function(model, weights_path, strict = FALSE) {
   if (strict && length(missing) > 0)
     stop("Strict load: ", length(missing), " expected params missing.")
 
-  model$load_state_dict(loadable, strict = FALSE)
+  # R torch's load_state_dict does not support strict = FALSE, so we build a
+  # complete state dict by starting from the model's current values (random
+  # init) and overwriting only the keys present in the checkpoint.  Missing
+  # keys (e.g. token_type_embeddings in RoBERTa-derived models) keep their
+  # random init, which is harmless because those embeddings are never activated
+  # (token_type_ids are always 0).
+  full_state <- model$state_dict()
+  for (key in names(loadable)) {
+    full_state[[key]] <- loadable[[key]]
+  }
+  model$load_state_dict(full_state)
   message(sprintf("Loaded %d / %d expected parameters from %s",
                   length(loadable), length(expected),
                   basename(weights_path)))
