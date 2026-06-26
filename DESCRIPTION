@@ -21,5 +21,7 @@ Imports:
     wordpiece
 Suggests:
     testthat (>= 3.0.0),
-    plotly
+    plotly,
+    httr2,
+    gutenbergr
 Config/testthat/edition: 3

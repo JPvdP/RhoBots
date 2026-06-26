@@ -123,11 +123,13 @@ c_tf_idf <- function(dtm, cluster_ids, top_n = 10,
   ctfidf <- as.matrix(tf) * matrix(idf, nrow = nrow(tf), ncol = length(idf),
                                    byrow = TRUE)
 
+  n_terms <- ncol(ctfidf)
   topics <- lapply(seq_along(classes), function(k) {
-    o <- order(ctfidf[k, ], decreasing = TRUE)[seq_len(top_n)]
+    n <- min(top_n, n_terms)
+    o <- order(ctfidf[k, ], decreasing = TRUE)[seq_len(n)]
     data.frame(
       topic = classes[k],
-      rank  = seq_len(top_n),
+      rank  = seq_len(n),
       term  = vocab[o],
       score = ctfidf[k, o],
       stringsAsFactors = FALSE
