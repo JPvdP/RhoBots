@@ -230,6 +230,7 @@ fit_bertopic <- function(encoder               = NULL,
                          # Pluggable models (take precedence when supplied)
                          dim_reduction_model   = NULL,
                          cluster_model         = NULL,
+                         representation_model  = NULL,
                          # Legacy UMAP params — used to build default umap_reduction()
                          umap_n_neighbors      = 15,
                          umap_n_components     = 5,
@@ -297,7 +298,29 @@ fit_bertopic <- function(encoder               = NULL,
     load_stopwords(extra_stopwords) else character(0)
   final_sw <- unique(c(base_sw, extra_sw))
 
-  dtm <- build_dtm(docs, stopwords = final_sw, ngram_range = ngram_range)
+  if (is.null(representation_model)) {
+    dtm <- build_dtm(docs, stopwords = final_sw, ngram_range = ngram_range)
+  } else if (inherits(representation_model, "pos_representation")) {
+    dtm <- pos_dtm(
+      docs,
+      pos             = representation_model$pos,
+      patterns        = representation_model$patterns,
+      lemmatize       = representation_model$lemmatize,
+      language        = representation_model$language,
+      model_dir       = representation_model$model_dir,
+      min_df          = representation_model$min_df,
+      max_df_frac     = representation_model$max_df_frac,
+      extra_stopwords = extra_sw,
+      verbose         = verbose
+    )
+  } else if (inherits(representation_model, "cvalue_representation")) {
+    dtm <- .cvalue_dtm(docs, representation_model, final_sw, verbose)
+  } else {
+    stop("Unsupported representation_model class: ",
+         paste(class(representation_model), collapse = "/"),
+         "\nUse pos_representation() or cvalue_representation().")
+  }
+
   topic_terms <- c_tf_idf(dtm, cluster_ids, top_n = top_n_terms,
                            reduce_frequent_words = reduce_frequent_words)
 
@@ -357,6 +380,7 @@ fit_bertopic <- function(encoder               = NULL,
       reduced               = reduced,
       dim_reduction_model   = dim_reduction_model,
       cluster_model         = cluster_model,
+      representation_model  = representation_model,
       layout2d              = layout2d,
       clusters              = cluster_ids,
       topic_terms           = topic_terms,

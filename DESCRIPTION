@@ -23,5 +23,6 @@ Suggests:
     testthat (>= 3.0.0),
     plotly,
     httr2,
-    gutenbergr
+    gutenbergr,
+    udpipe
 Config/testthat/edition: 3

@@ -1,20 +1,11 @@
-<<<<<<< HEAD
-.Rproj.user
-.Rhistory
-.RData
-.httr-oauth
-.DS_Store
-.quarto
-=======
 # History files
 .Rhistory
 .Rapp.history
-
-# Session Data files
 .RData
 .RDataTmp
 
 # User-specific files
+.Rproj.user/
 .Ruserdata
 
 # Example code in package build process
@@ -26,14 +17,11 @@
 # Output files from R CMD check
 /*.Rcheck/
 
-# RStudio files
-.Rproj.user/
-
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf
 
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
+# OAuth2 token
 .httr-oauth
 
 # knitr and R markdown default cache directories
@@ -55,4 +43,19 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
->>>>>>> 2b0a56c939c3f85454c88f8573258461c0cfcf47
+
+# macOS
+.DS_Store
+
+# Quarto
+.quarto
+
+# paper/ build artifacts
+paper/Rplots*.pdf
+paper/*.log
+paper/*.html
+paper/*.pdf
+paper/*.tex
+paper/cache/
+paper/figure/
+paper/rhobots_files/
