@@ -325,87 +325,79 @@ visualize_sweep <- function(sweep,
     norm_mat[, m] <- norm
   }
 
-  # --- Hover text matrix ------------------------------------------------------
+  # --- Cell text (raw values displayed inside each cell) ----------------------
+  fmt_val <- function(vals, m)
+    ifelse(is.na(vals), "err",
+           ifelse(m == "n_topics",
+                  as.character(as.integer(vals)),
+                  sprintf("%.3f", vals)))
+
+  cell_mat <- matrix("", nrow = n_runs, ncol = length(metrics))
+  for (j in seq_along(metrics))
+    cell_mat[, j] <- fmt_val(raw_mat[, metrics[j]], metrics[j])
+
+  # --- Hover text (shown on mouse-over) ---------------------------------------
+  pretty_cols <- vapply(metrics,
+                        function(m) col_names[m] %||% m, character(1L))
   hover_mat <- matrix("", nrow = n_runs, ncol = length(metrics))
   for (j in seq_along(metrics)) {
-    m <- metrics[j]
-    hover_mat[, j] <- ifelse(
-      is.na(raw_mat[, m]),
-      paste0(col_names[m], ": failed"),
-      paste0("<b>", row_lbls, "</b><br>",
-             col_names[m] %||% m, ": ",
-             ifelse(m == "n_topics",
-                    formatC(raw_mat[, m], format = "d"),
-                    formatC(raw_mat[, m], digits = 3L, format = "f")))
+    nm <- gsub("\n", " ", pretty_cols[j])
+    hover_mat[, j] <- paste0(
+      "<b>", row_lbls, "</b><br>",
+      nm, ": ", cell_mat[, j]
     )
   }
 
-  # --- Annotate best row ------------------------------------------------------
+  # --- Best-row annotation (single named list — no vector args) ---------------
   best_row <- if (!is.null(sweep$best) && "silhouette" %in% metrics) {
     b <- sweep$best
-    which(df$model       == b$model        &
-          df$n_neighbors == b$n_neighbors  &
+    which(df$model        == b$model        &
+          df$n_neighbors  == b$n_neighbors  &
           df$n_components == b$n_components &
-          df$min_pts     == b$min_pts)[1L]
+          df$min_pts      == b$min_pts)[1L]
   } else NULL
-
-  annots <- if (!is.null(best_row)) {
-    list(list(
-      x = length(metrics) - 0.5,
-      y = best_row - 1L,    # 0-indexed
-      xref = "x", yref = "y",
-      text = "★ best",
-      showarrow = FALSE,
-      font = list(size = 10L, color = "#2c7bb6"),
-      xanchor = "left"
-    ))
-  } else list()
 
   # --- Build heatmap ----------------------------------------------------------
   if (is.null(height)) height <- max(400L, 30L * n_runs + 120L)
 
-  pretty_cols <- vapply(metrics, function(m) col_names[m] %||% m, character(1L))
-
   p <- plotly::plot_ly(
-    z           = norm_mat,
-    x           = pretty_cols,
-    y           = row_lbls,
-    type        = "heatmap",
-    colorscale  = list(list(0, "#f7f7f7"), list(1, "#1a7a3f")),
-    zmin        = 0, zmax = 1,
-    text        = hover_mat,
-    hovertemplate = "%{text}<extra></extra>",
-    showscale   = FALSE
+    width         = width,
+    height        = height,
+    z             = norm_mat,
+    x             = pretty_cols,
+    y             = row_lbls,
+    type          = "heatmap",
+    colorscale    = list(list(0, "#f7f7f7"), list(1, "#1a7a3f")),
+    zmin          = 0,
+    zmax          = 1,
+    text          = cell_mat,
+    hovertext     = hover_mat,
+    hovertemplate = "%{hovertext}<extra></extra>",
+    texttemplate  = "%{text}",
+    textfont      = list(size = 9L, color = "#333333"),
+    showscale     = FALSE
   )
 
-  # Overlay raw value text
-  for (j in seq_along(metrics)) {
-    m    <- metrics[j]
-    vals <- raw_mat[, m]
-    txt  <- ifelse(is.na(vals), "err",
-             ifelse(m %in% c("n_topics", "noise_pct"),
-                    formatC(vals, digits = 1L, format = "f"),
-                    formatC(vals, digits = 3L, format = "f")))
+  if (!is.null(best_row)) {
     p <- plotly::add_annotations(p,
-      x         = rep(j - 1L, n_runs),
-      y         = seq_len(n_runs) - 1L,
-      text      = txt,
-      xref      = "x", yref = "y",
+      x         = length(metrics) - 0.5,
+      y         = best_row - 1L,
+      xref      = "x",
+      yref      = "y",
+      text      = "  ★ best",
       showarrow = FALSE,
-      font      = list(size = 9L, color = "#1a1a1a")
+      xanchor   = "left",
+      font      = list(size = 10L, color = "#2c7bb6")
     )
   }
 
   plotly::layout(p,
-    width  = width,
-    height = height,
-    xaxis  = list(title = "", side = "top",
-                  tickfont = list(size = 10L)),
-    yaxis  = list(title = "", autorange = "reversed",
-                  tickfont = list(size = 10L)),
+    xaxis         = list(title = "", side = "top",
+                         tickfont = list(size = 10L)),
+    yaxis         = list(title = "", autorange = "reversed",
+                         tickfont = list(size = 10L)),
     paper_bgcolor = "white",
     plot_bgcolor  = "white",
-    margin = list(l = 160L, t = 80L, r = 20L, b = 20L),
-    annotations = annots
+    margin        = list(l = 160L, t = 80L, r = 20L, b = 20L)
   )
 }
