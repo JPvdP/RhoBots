@@ -54,6 +54,20 @@
 #'                       weights_path = "/path/to/local/model.safetensors")
 #' }
 load_hf_bert <- function(repo_id, weights_path = NULL) {
+  # Fail fast with a clear message before touching the network
+  if (!requireNamespace("torch", quietly = TRUE))
+    stop("The 'torch' package is required. Run install.packages('torch') ",
+         "then rhobots_install().")
+  if (!torch::torch_is_installed()) {
+    extra <- if (.Platform$OS.type == "windows")
+      paste0("\nWindows: first install the Visual C++ Redistributable 2022 —",
+             "\n  https://aka.ms/vs/17/release/vc_redist.x64.exe",
+             "\nthen restart Windows and run rhobots_install().")
+    else
+      ""
+    stop("The torch C++ backend is not ready. Run rhobots_install() to set it up.", extra)
+  }
+
   required <- c("hfhub", "jsonlite", "tok")
   for (pkg in required) {
     if (!requireNamespace(pkg, quietly = TRUE))
