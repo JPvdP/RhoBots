@@ -131,7 +131,38 @@ bert_output <- torch::nn_module(
   }
 )
 
+#' Pfeiffer bottleneck adapter module (used by SPECTER2 and compatible models)
+#'
+#' Implements the adapter described in Pfeiffer et al. (2020):
+#'   down-project (H → d), ReLU, up-project (d → H), add skip connection.
+#' Inserted after the FFN sublayer of each BertLayer by [load_specter2()].
+#'
+#' The weight layout matches the HuggingFace `adapters` library convention:
+#' `adapter_down.0.{weight,bias}` (Sequential wrapper) and
+#' `adapter_up.{weight,bias}`.
+#'
+#' @keywords internal
+#' @noRd
+bert_adapter <- torch::nn_module(
+  "BertAdapter",
+  initialize = function(hidden_size, reduction_factor = 16L) {
+    d <- as.integer(hidden_size / reduction_factor)
+    # nn_sequential so state_dict keys are "adapter_down.0.weight/bias",
+    # matching the HuggingFace adapters library naming convention.
+    self$adapter_down <- torch::nn_sequential(torch::nn_linear(hidden_size, d))
+    self$adapter_up   <- torch::nn_linear(d, hidden_size)
+  },
+  forward = function(x) {
+    self$adapter_up(torch::nnf_relu(self$adapter_down(x))) + x
+  }
+)
+
 #' BERT layer (one transformer block: attention + feed-forward)
+#'
+#' An optional Pfeiffer adapter can be attached after construction by
+#' assigning a [bert_adapter] instance to `layer$adapter` (done automatically
+#' by [load_specter2()]).
+#'
 #' @keywords internal
 #' @noRd
 bert_layer <- torch::nn_module(
@@ -140,11 +171,14 @@ bert_layer <- torch::nn_module(
     self$attention    <- bert_attention(config)
     self$intermediate <- bert_intermediate(config)
     self$output       <- bert_output(config)
+    self$adapter      <- NULL   # set by load_specter2() after construction
   },
   forward = function(x, mask) {
     a <- self$attention(x, mask)
     i <- self$intermediate(a)
-    self$output(i, a)
+    h <- self$output(i, a)
+    if (!is.null(self$adapter)) h <- self$adapter(h)
+    h
   }
 )
 

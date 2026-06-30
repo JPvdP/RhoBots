@@ -31,13 +31,19 @@ log_msg <- function(...) {
   cat(msg, "\n", file = LOG_FILE, append = TRUE)
 }
 
-# Five BERT-family encoders: small-to-large, general + domain-specific
+# Encoders to benchmark.  Each entry: repo_id (character) or a list with
+# repo_id + loader (for models that need a specialised load function).
+# load_hf_bert() is the default; load_specter2() is used for SPECTER2 adapters.
 MODELS <- list(
   "MiniLM-L6"          = "sentence-transformers/all-MiniLM-L6-v2",
   "MiniLM-L12"         = "sentence-transformers/paraphrase-MiniLM-L12-v2",
   "DistilRoBERTa"      = "sentence-transformers/all-distilroberta-v1",
   "MPNet-base"         = "sentence-transformers/all-mpnet-base-v2",
-  "SciBERT"            = "allenai/scibert_scivocab_uncased"
+  "SciBERT"            = "allenai/scibert_scivocab_uncased",
+  "SPECTER2-proximity" = list(repo_id = "allenai/specter2",
+                               loader  = "specter2"),
+  "SPECTER2-query"     = list(repo_id = "allenai/specter2_adhoc_query",
+                               loader  = "specter2")
 )
 
 # Seed topics for guided fitting (sustainability-research defaults;
@@ -108,7 +114,9 @@ all_results <- list()
 
 for (model_name in names(MODELS)) {
 
-  repo_id   <- MODELS[[model_name]]
+  spec      <- MODELS[[model_name]]
+  repo_id   <- if (is.list(spec)) spec$repo_id else spec
+  loader    <- if (is.list(spec)) spec$loader  else "hf_bert"
   model_dir <- file.path(OUT_DIR, model_name)
   dir.create(model_dir, showWarnings = FALSE)
 
@@ -119,7 +127,10 @@ for (model_name in names(MODELS)) {
 
   # ---- [1] Load encoder ------------------------------------------------
   enc <- run_block("load_encoder", {
-    e <- load_hf_bert(repo_id)
+    e <- if (loader == "specter2")
+           load_specter2(adapter = repo_id)
+         else
+           load_hf_bert(repo_id)
     log_msg("    hidden=", e$config$hidden_size,
             "  layers=", e$config$num_hidden_layers)
     e
