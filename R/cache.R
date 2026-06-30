@@ -34,23 +34,25 @@
 #'   written to this path.  Pass \code{NULL} to skip caching entirely.
 #' @param overwrite If \code{TRUE}, always recompute even if the cache file
 #'   exists (default \code{FALSE}).
-#' @param batch_size,max_length,normalize,device,prefix Forwarded to
-#'   \code{\link{embed_texts}}.  \code{prefix} defaults to \code{NULL},
-#'   which inherits the encoder's stored prefix (set via
-#'   \code{\link{load_hf_bert}}'s \code{prefix} argument).
+#' @param batch_size,max_length,normalize,device,prefix,chunk_strategy,chunk_overlap
+#'   Forwarded to \code{\link{embed_texts}}.  \code{prefix} defaults to
+#'   \code{NULL}, inheriting the encoder's stored prefix.
 #' @param verbose Print progress messages.
 #' @return A numeric matrix with \code{length(texts)} rows.
 #' @export
 embed_texts_cached <- function(encoder    = NULL,
                                 texts,
-                                cache_file   = NULL,
-                                overwrite    = FALSE,
-                                batch_size   = 32L,
-                                max_length   = 256L,
-                                normalize    = TRUE,
-                                device       = "cpu",
-                                prefix       = NULL,
-                                verbose      = interactive()) {
+                                cache_file     = NULL,
+                                overwrite      = FALSE,
+                                batch_size     = 32L,
+                                max_length     = 256L,
+                                normalize      = TRUE,
+                                device         = "cpu",
+                                prefix         = NULL,
+                                chunk_strategy = c("truncate", "mean", "first"),
+                                chunk_overlap  = 0L,
+                                verbose        = interactive()) {
+  chunk_strategy <- match.arg(chunk_strategy)
   # --- Try to load from cache ----------------------------------------------
   if (!is.null(cache_file) && file.exists(cache_file) && !overwrite) {
     if (verbose) message("Loading embeddings from cache: ", cache_file)
@@ -71,12 +73,14 @@ embed_texts_cached <- function(encoder    = NULL,
          "(no cache found at '", cache_file %||% "<no path>", "').")
 
   emb <- embed_texts(encoder, texts,
-                      batch_size = batch_size,
-                      max_length = max_length,
-                      normalize  = normalize,
-                      device     = device,
-                      prefix     = prefix,
-                      verbose    = verbose)
+                      batch_size     = batch_size,
+                      max_length     = max_length,
+                      normalize      = normalize,
+                      device         = device,
+                      prefix         = prefix,
+                      chunk_strategy = chunk_strategy,
+                      chunk_overlap  = chunk_overlap,
+                      verbose        = verbose)
 
   # --- Save to cache --------------------------------------------------------
   if (!is.null(cache_file)) {
