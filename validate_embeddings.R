@@ -38,12 +38,40 @@ get_arg <- function(flag, default = NULL) {
 }
 
 CSV_PATH   <- args[!startsWith(args, "--")][1]
-if (is.na(CSV_PATH) || !nzchar(CSV_PATH)) CSV_PATH <- "abstracts.csv"
+if (is.na(CSV_PATH) || !nzchar(CSV_PATH)) CSV_PATH <- "/Users/janpieter/Desktop/Projects/UU_Sciento/abstracts_by_continent/Middle_East_abstracts.csv"
 TEXT_COL   <- get_arg("--col",    "Abstract")
 N_TEXTS    <- as.integer(get_arg("--n",     "200"))
 MAX_LEN    <- as.integer(get_arg("--maxlen","256"))
 BATCH_SIZE <- as.integer(get_arg("--batch", "32"))
-PYTHON_BIN <- get_arg("--python", "python3")
+PYTHON_BIN <- get_arg("--python", NULL)
+
+# Auto-detect a Python that has pandas + transformers + torch when none given
+if (is.null(PYTHON_BIN)) {
+  candidates <- c(
+    "/Users/janpieter/miniforge3/envs/bertopic_env/bin/python",
+    "/opt/anaconda3/envs/bertopic_env/bin/python",
+    Sys.which("python3"),
+    "/Users/janpieter/miniforge3/bin/python3",
+    "/opt/homebrew/bin/python3",
+    "/usr/local/bin/python3"
+  )
+  # Write a temp script — avoids shell-splitting the -c argument
+  .check_py <- tempfile(fileext = ".py")
+  writeLines("import pandas, transformers, torch", .check_py)
+  for (cand in candidates[nzchar(candidates)]) {
+    ok <- tryCatch(
+      system2(cand, .check_py, stdout = FALSE, stderr = FALSE) == 0L,
+      error = function(e) FALSE
+    )
+    if (ok) { PYTHON_BIN <- cand; break }
+  }
+  file.remove(.check_py)
+  if (is.null(PYTHON_BIN))
+    stop("No Python with pandas + transformers + torch found.\n",
+         "Pass --python /path/to/python with the right environment.")
+  message("Auto-detected Python: ", PYTHON_BIN)
+}
+
 THRESHOLD  <- 0.9999   # minimum acceptable cosine similarity
 
 PY_WORKER  <- file.path(dirname(normalizePath(
@@ -56,17 +84,23 @@ OUT_DIR    <- "validation_results"
 dir.create(OUT_DIR, showWarnings = FALSE)
 
 # =============================================================================
-# Models to validate (SPECTER2 excluded — needs adapters library on Python side)
+# Models to validate
+# Notes:
+#   SPECTER2  — excluded: Python side requires the `adapters` library
+#   MPNet     — excluded: model_type "mpnet" is not BERT-family; load_hf_bert()
+#               rejects it with a clear error (use sentence-transformers in Python)
+#   SciBERT   — excluded: allenai/scibert_scivocab_uncased uses a legacy pickle
+#               pytorch_model.bin that R-torch cannot read; convert to safetensors
+#               first (see load_hf_bert() error message for instructions)
 # =============================================================================
 MODELS <- list(
-  "MiniLM-L6"     = list(repo = "sentence-transformers/all-MiniLM-L6-v2",   prefix = ""),
+  "MiniLM-L6"     = list(repo = "sentence-transformers/all-MiniLM-L6-v2",        prefix = ""),
   "MiniLM-L12"    = list(repo = "sentence-transformers/paraphrase-MiniLM-L12-v2", prefix = ""),
-  "DistilRoBERTa" = list(repo = "sentence-transformers/all-distilroberta-v1", prefix = ""),
-  "MPNet-base"    = list(repo = "sentence-transformers/all-mpnet-base-v2",   prefix = ""),
-  "SciBERT"       = list(repo = "allenai/scibert_scivocab_uncased",           prefix = ""),
+  "DistilRoBERTa" = list(repo = "sentence-transformers/all-distilroberta-v1",      prefix = ""),
+  "MPNet-base"    = list(repo = "sentence-transformers/all-mpnet-base-v2",         prefix = ""),
   "BGE-base"      = list(repo = "BAAI/bge-base-en-v1.5",
                           prefix = "Represent this sentence: "),
-  "E5-base"       = list(repo = "intfloat/e5-base-v2",    prefix = "passage: ")
+  "E5-base"       = list(repo = "intfloat/e5-base-v2", prefix = "passage: ")
 )
 
 # =============================================================================
@@ -144,9 +178,12 @@ for (model_name in names(MODELS)) {
               mean_abs_diff = NA, max_abs_diff = NA, pass = FALSE)
 
   # ---- [R] Embed with Rhobots -----------------------------------------------
+  pooling <- "mean"
   r_ok <- tryCatch({
     log_msg("  [R] Loading encoder...")
-    enc <- load_hf_bert(repo, prefix = prefix)
+    enc     <- load_hf_bert(repo, prefix = prefix)
+    pooling <- enc$pooling %||% "mean"
+    log_msg("  [R] Pooling: ", pooling)
     log_msg("  [R] Embedding ", length(texts), " texts...")
     emb_r <- embed_texts(enc, texts, batch_size = BATCH_SIZE,
                          max_length = MAX_LEN, normalize = TRUE,
@@ -162,12 +199,12 @@ for (model_name in names(MODELS)) {
   if (!r_ok) { results[[model_name]] <- row; next }
 
   # ---- [Python] Embed with transformers -------------------------------------
-  log_msg("  [Py] Running transformers.AutoModel...")
+  log_msg("  [Py] Running transformers.AutoModel (pooling=", pooling, ")...")
   py_cmd <- sprintf(
-    '"%s" "%s" --model "%s" --input "%s" --output "%s" --prefix "%s" --col text --max_len %d --batch %d',
+    '"%s" "%s" --model "%s" --input "%s" --output "%s" --prefix "%s" --pooling "%s" --col text --max_len %d --batch %d',
     PYTHON_BIN, PY_WORKER, repo,
     normalizePath(input_csv), normalizePath(py_csv),
-    prefix, MAX_LEN, BATCH_SIZE
+    prefix, pooling, MAX_LEN, BATCH_SIZE
   )
   py_status <- system(py_cmd)
 

@@ -86,6 +86,23 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
   # --- config ---
   cfg_path <- hfhub::hub_download(repo_id, "config.json")
   cfg_raw  <- jsonlite::fromJSON(cfg_path)
+  model_type <- cfg_raw$model_type %||% "bert"
+
+  # Reject architectures that are not BERT-family and cannot be loaded with
+  # this implementation.  Add to the supported list as new arch support lands.
+  .supported_types <- c("bert", "roberta", "xlm-roberta", "camembert",
+                        "distilbert", "albert", "mpnet")
+  .bert_family     <- c("bert", "roberta", "xlm-roberta", "camembert",
+                        "distilbert")
+  if (!model_type %in% .bert_family) {
+    stop("'", repo_id, "' has model_type '", model_type, "', ",
+         "which is not supported by Rhobots.\n",
+         "Rhobots implements the BERT/RoBERTa encoder family.\n",
+         "Supported model_types: ", paste(.bert_family, collapse = ", "), ".\n",
+         "For MPNet, GPT-2, T5, or other architectures, use the Python ",
+         "`sentence-transformers` library instead.")
+  }
+
   cfg <- list(
     vocab_size              = cfg_raw$vocab_size,
     hidden_size             = cfg_raw$hidden_size,
@@ -94,7 +111,8 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
     intermediate_size       = cfg_raw$intermediate_size,
     max_position_embeddings = cfg_raw$max_position_embeddings,
     type_vocab_size         = cfg_raw$type_vocab_size %||% 2,
-    layer_norm_eps          = cfg_raw$layer_norm_eps  %||% 1e-12
+    layer_norm_eps          = cfg_raw$layer_norm_eps  %||% 1e-12,
+    model_type              = model_type
   )
 
   # --- weights ---

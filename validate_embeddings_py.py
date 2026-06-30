@@ -2,13 +2,13 @@
 validate_embeddings_py.py — Python side of the Rhobots embedding validation.
 
 Called by validate_embeddings.R.  Loads texts from a CSV, embeds them using
-HuggingFace transformers (AutoModel + mean pool + L2 norm), and writes the
+HuggingFace transformers (AutoModel + pooling + L2 norm), and writes the
 embedding matrix to a CSV file.
 
 The pipeline deliberately mirrors what Rhobots does in R:
   1. AutoModel.from_pretrained  (same weights as load_hf_bert)
   2. AutoTokenizer               (same tokenizer.json)
-  3. Mean pool over non-padding tokens
+  3. Pool: mean over non-padding tokens, or CLS token (matches encoder$pooling)
   4. L2 normalise rows
   5. Add instruction prefix when supplied (same as embed_texts(prefix=...))
 
@@ -18,11 +18,11 @@ Usage (called automatically by validate_embeddings.R):
       --input   /path/to/texts.csv   \\
       --output  /path/to/out.csv     \\
       --prefix  ""                   \\
+      --pooling mean                 \\
       --col     text                 \\
       --max_len 256                  \\
       --batch   32
 """
-
 import argparse, sys, os
 import numpy as np
 import pandas as pd
@@ -32,12 +32,16 @@ def mean_pool(hidden_states, attention_mask):
     mask = attention_mask.unsqueeze(-1).float()
     return (hidden_states * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
 
+def cls_pool(hidden_states):
+    """Return the [CLS] token (position 0) as the sentence vector."""
+    return hidden_states[:, 0, :]
+
 def l2_norm(matrix):
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1.0, norms)
     return matrix / norms
 
-def embed(model, tokenizer, texts, prefix, max_len, batch_size, device):
+def embed(model, tokenizer, texts, prefix, pooling, max_len, batch_size, device):
     import torch
     model.eval()
     model.to(device)
@@ -58,7 +62,7 @@ def embed(model, tokenizer, texts, prefix, max_len, batch_size, device):
             out = model(**enc)
         hidden = out.last_hidden_state          # (B, L, H)
         mask   = enc["attention_mask"]          # (B, L)
-        pooled = mean_pool(hidden, mask)        # (B, H)
+        pooled = cls_pool(hidden) if pooling == "cls" else mean_pool(hidden, mask)
         all_vecs.append(pooled.cpu().numpy())
         print(f"  embedded {min(start + batch_size, len(texts))} / {len(texts)}",
               flush=True)
@@ -71,6 +75,7 @@ def main():
     p.add_argument("--input",   required=True)
     p.add_argument("--output",  required=True)
     p.add_argument("--prefix",  default="")
+    p.add_argument("--pooling", default="mean", choices=["mean", "cls"])
     p.add_argument("--col",     default="text")
     p.add_argument("--max_len", type=int, default=256)
     p.add_argument("--batch",   type=int, default=32)
@@ -84,22 +89,23 @@ def main():
                  "Install with: pip install transformers torch")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[Python] Model:  {args.model}")
-    print(f"[Python] Device: {device}")
-    print(f"[Python] Prefix: '{args.prefix}'")
+    print(f"[Python] Model:   {args.model}")
+    print(f"[Python] Device:  {device}")
+    print(f"[Python] Prefix:  '{args.prefix}'")
+    print(f"[Python] Pooling: {args.pooling}")
 
     df = pd.read_csv(args.input)
     if args.col not in df.columns:
         sys.exit(f"Column '{args.col}' not found. Available: {list(df.columns)}")
     texts = df[args.col].astype(str).tolist()
-    print(f"[Python] Texts:  {len(texts)}")
+    print(f"[Python] Texts:   {len(texts)}")
 
     print("[Python] Loading tokenizer and model...")
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model     = AutoModel.from_pretrained(args.model)
 
     print("[Python] Embedding...")
-    emb = embed(model, tokenizer, texts, args.prefix,
+    emb = embed(model, tokenizer, texts, args.prefix, args.pooling,
                 args.max_len, args.batch, device)
 
     print(f"[Python] Matrix: {emb.shape[0]} x {emb.shape[1]}")

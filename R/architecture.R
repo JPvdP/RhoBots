@@ -24,10 +24,16 @@ bert_embeddings <- torch::nn_module(
                                                       config$hidden_size)
     self$LayerNorm <- torch::nn_layer_norm(config$hidden_size,
                                            eps = config$layer_norm_eps)
+    # RoBERTa (and XLM-RoBERTa, CamemBERT) reserve position 0 as padding
+    # and start real positions at 2 (padding_idx = 1).  Standard BERT starts
+    # at 0.  We store the offset at construction time so forward() is clean.
+    self$pos_offset <- if (config$model_type %in%
+                           c("roberta", "xlm-roberta", "camembert")) 2L else 0L
   },
   forward = function(input_ids) {
     L <- input_ids$size(2)
-    pos_ids <- torch::torch_arange(start = 0, end = L - 1,
+    pos_ids <- torch::torch_arange(start = self$pos_offset,
+                                   end   = L - 1 + self$pos_offset,
                                    dtype = torch::torch_long(),
                                    device = input_ids$device)$
       unsqueeze(1)$expand_as(input_ids)
