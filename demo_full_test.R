@@ -32,7 +32,7 @@ log_msg <- function(...) {
 }
 
 # Encoders to benchmark.  Each entry: repo_id (character) or a list with
-# repo_id + loader (for models that need a specialised load function).
+# repo_id + optional loader / prefix fields.
 # load_hf_bert() is the default; load_specter2() is used for SPECTER2 adapters.
 MODELS <- list(
   "MiniLM-L6"          = "sentence-transformers/all-MiniLM-L6-v2",
@@ -40,6 +40,13 @@ MODELS <- list(
   "DistilRoBERTa"      = "sentence-transformers/all-distilroberta-v1",
   "MPNet-base"         = "sentence-transformers/all-mpnet-base-v2",
   "SciBERT"            = "allenai/scibert_scivocab_uncased",
+  # BGE — SOTA general-purpose; requires document prefix for best performance
+  "BGE-base"           = list(repo_id = "BAAI/bge-base-en-v1.5",
+                               prefix  = "Represent this sentence: "),
+  # E5 — strong multilingual-capable model; passage prefix for documents
+  "E5-base"            = list(repo_id = "intfloat/e5-base-v2",
+                               prefix  = "passage: "),
+  # SPECTER2 — best for scientific abstracts
   "SPECTER2-proximity" = list(repo_id = "allenai/specter2",
                                loader  = "specter2"),
   "SPECTER2-query"     = list(repo_id = "allenai/specter2_adhoc_query",
@@ -116,7 +123,8 @@ for (model_name in names(MODELS)) {
 
   spec      <- MODELS[[model_name]]
   repo_id   <- if (is.list(spec)) spec$repo_id else spec
-  loader    <- if (is.list(spec)) spec$loader  else "hf_bert"
+  loader    <- if (is.list(spec)) spec$loader  %||% "hf_bert" else "hf_bert"
+  prefix    <- if (is.list(spec)) spec$prefix  %||% ""        else ""
   model_dir <- file.path(OUT_DIR, model_name)
   dir.create(model_dir, showWarnings = FALSE)
 
@@ -130,9 +138,11 @@ for (model_name in names(MODELS)) {
     e <- if (loader == "specter2")
            load_specter2(adapter = repo_id)
          else
-           load_hf_bert(repo_id)
+           load_hf_bert(repo_id, prefix = prefix)
     log_msg("    hidden=", e$config$hidden_size,
-            "  layers=", e$config$num_hidden_layers)
+            "  layers=", e$config$num_hidden_layers,
+            if (nzchar(e$prefix %||% "")) paste0("  prefix=\"", e$prefix, "\"") else "",
+            "  pooling=", e$pooling %||% "mean")
     e
   }, res)
   if (is.null(enc)) { all_results[[model_name]] <- res; next }

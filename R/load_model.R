@@ -49,11 +49,20 @@
 #'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
 #'   emb <- embed_texts(enc, c("Hello world.", "Another sentence."))
 #'
+#'   # BGE model — prefix at load time, applied automatically on every embed call
+#'   enc <- load_hf_bert("BAAI/bge-base-en-v1.5",
+#'                        prefix = "Represent this sentence: ")
+#'
+#'   # E5 model — passage prefix for documents
+#'   enc <- load_hf_bert("intfloat/e5-base-v2", prefix = "passage: ")
+#'   # Override per-call for query-side embedding:
+#'   query_emb <- embed_texts(enc, queries, prefix = "query: ")
+#'
 #'   # With a custom weights file (e.g. safetensors from an unmerged PR)
 #'   enc <- load_hf_bert("pritamdeka/S-Scibert-snli-multinli-stsb",
 #'                       weights_path = "/path/to/local/model.safetensors")
 #' }
-load_hf_bert <- function(repo_id, weights_path = NULL) {
+load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
   # Fail fast with a clear message before touching the network
   if (!requireNamespace("torch", quietly = TRUE))
     stop("The 'torch' package is required. Run install.packages('torch') ",
@@ -132,12 +141,31 @@ load_hf_bert <- function(repo_id, weights_path = NULL) {
     make_wordpiece_tokenizer(vocab_path, do_lower_case = do_lower)
   })
 
+  # --- pooling strategy (auto-detected from sentence-transformers config) ---
+  pooling_cfg <- tryCatch({
+    p <- hfhub::hub_download(repo_id, "1_Pooling/config.json")
+    jsonlite::fromJSON(p)
+  }, error = function(e) NULL)
+
+  pooling <- if (!is.null(pooling_cfg) && isTRUE(pooling_cfg$pooling_mode_cls_token))
+    "cls"
+  else
+    "mean"
+
+  if (pooling == "cls")
+    message("  Pooling: CLS token (from 1_Pooling/config.json)")
+
   # --- assemble ---
   model <- bert_model(cfg)
   load_bert_weights(model, weights_path, strict = FALSE)
   model$eval()
   structure(
-    list(model = model, tokenizer = tokenizer, config = cfg, repo_id = repo_id),
+    list(model     = model,
+         tokenizer = tokenizer,
+         config    = cfg,
+         repo_id   = repo_id,
+         pooling   = pooling,
+         prefix    = prefix),
     class = c("bert_encoder", "list")
   )
 }
@@ -279,6 +307,9 @@ print.bert_encoder <- function(x, ...) {
   cat("  heads:       ", x$config$num_attention_heads, "\n")
   cat("  vocab_size:  ", x$config$vocab_size, "\n")
   cat("  max_len:     ", x$config$max_position_embeddings, "\n")
+  cat("  pooling:     ", x$pooling %||% "mean", "\n")
+  if (nzchar(x$prefix %||% ""))
+    cat("  prefix:      \"", x$prefix, "\"\n", sep = "")
   if (!is.null(x$adapter_repo))
     cat("  adapter:     ", x$adapter_name, " (", x$adapter_repo, ")\n", sep = "")
   invisible(x)

@@ -34,8 +34,10 @@
 #'   written to this path.  Pass \code{NULL} to skip caching entirely.
 #' @param overwrite If \code{TRUE}, always recompute even if the cache file
 #'   exists (default \code{FALSE}).
-#' @param batch_size,max_length,normalize,device Forwarded to
-#'   \code{\link{embed_texts}}.
+#' @param batch_size,max_length,normalize,device,prefix Forwarded to
+#'   \code{\link{embed_texts}}.  \code{prefix} defaults to \code{NULL},
+#'   which inherits the encoder's stored prefix (set via
+#'   \code{\link{load_hf_bert}}'s \code{prefix} argument).
 #' @param verbose Print progress messages.
 #' @return A numeric matrix with \code{length(texts)} rows.
 #' @export
@@ -47,6 +49,7 @@ embed_texts_cached <- function(encoder    = NULL,
                                 max_length   = 256L,
                                 normalize    = TRUE,
                                 device       = "cpu",
+                                prefix       = NULL,
                                 verbose      = interactive()) {
   # --- Try to load from cache ----------------------------------------------
   if (!is.null(cache_file) && file.exists(cache_file) && !overwrite) {
@@ -72,6 +75,7 @@ embed_texts_cached <- function(encoder    = NULL,
                       max_length = max_length,
                       normalize  = normalize,
                       device     = device,
+                      prefix     = prefix,
                       verbose    = verbose)
 
   # --- Save to cache --------------------------------------------------------
