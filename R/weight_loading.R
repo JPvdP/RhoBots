@@ -94,7 +94,7 @@
 #' @keywords internal
 #' @noRd
 .normalize_key <- function(key) {
-  for (pfx in c("bert.", "model.", "0.auto_model.", "auto_model.")) {
+  for (pfx in c("bert.", "mpnet.", "model.", "0.auto_model.", "auto_model.")) {
     if (startsWith(key, pfx)) key <- substring(key, nchar(pfx) + 1)
   }
   key <- sub("attention\\.self\\.", "attention.self_.", key)

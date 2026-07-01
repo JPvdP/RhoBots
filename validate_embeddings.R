@@ -87,8 +87,6 @@ dir.create(OUT_DIR, showWarnings = FALSE)
 # Models to validate
 # Notes:
 #   SPECTER2  — excluded: Python side requires the `adapters` library
-#   MPNet     — excluded: model_type "mpnet" is not BERT-family; load_hf_bert()
-#               rejects it with a clear error (use sentence-transformers in Python)
 #   SciBERT   — excluded: allenai/scibert_scivocab_uncased uses a legacy pickle
 #               pytorch_model.bin that R-torch cannot read; convert to safetensors
 #               first (see load_hf_bert() error message for instructions)
