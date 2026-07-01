@@ -7,6 +7,9 @@
 #
 # Expects a CSV with at least one column called "Abstract".
 # Results and cached embeddings are written to ./rhobots_test_results/
+# Each model gets its own sub-folder containing:
+#   *.rds          — saved R objects (fit, embeddings, metrics, ...)
+#   visuals/*.html — self-contained interactive plotly charts
 # =============================================================================
 
 suppressPackageStartupMessages(library(Rhobots))
@@ -113,6 +116,22 @@ run_block <- function(label, expr, res) {
   out
 }
 
+# Save a plotly widget as a self-contained HTML file.
+# Silently skips if htmlwidgets is not installed or the widget is NULL.
+save_html <- function(widget, path) {
+  if (is.null(widget)) return(invisible(NULL))
+  if (!requireNamespace("htmlwidgets", quietly = TRUE)) {
+    log_msg("    (htmlwidgets not installed — skipping HTML export)")
+    return(invisible(NULL))
+  }
+  dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
+  htmlwidgets::saveWidget(widget,
+                          file          = normalizePath(path, mustWork = FALSE),
+                          selfcontained = TRUE,
+                          libdir        = NULL)
+  log_msg("    Saved: ", basename(path))
+}
+
 # =============================================================================
 # Main loop — one model at a time
 # =============================================================================
@@ -129,6 +148,9 @@ for (model_name in names(MODELS)) {
   dir.create(model_dir, showWarnings = FALSE)
 
   log_msg("=== ", model_name, "  (", repo_id, ") ===")
+
+  vis_dir <- file.path(model_dir, "visuals")
+  dir.create(vis_dir, showWarnings = FALSE)
 
   res <- list(model = model_name, repo_id = repo_id,
               timings = list(), errors = list())
@@ -159,7 +181,7 @@ for (model_name in names(MODELS)) {
   if (is.null(emb)) { all_results[[model_name]] <- res; next }
 
   # ---- [3] sweep_topics ------------------------------------------------
-  run_block("sweep_topics", {
+  sw <- run_block("sweep_topics", {
     sw <- sweep_topics(
       docs        = docs,
       embeddings  = emb,
@@ -173,6 +195,12 @@ for (model_name in names(MODELS)) {
     log_msg("    ", nrow(sw$results), " combinations evaluated")
     sw
   }, res)
+  # Visual: heatmap / scatter of n_topics across parameter combinations
+  run_block("visual_sweep", {
+    p <- visualize_sweep(sw)
+    save_html(p, file.path(vis_dir, "sweep.html"))
+    p
+  }, res)
 
   # ---- [4] fit_bertopic (default) --------------------------------------
   fit <- run_block("fit_default", {
@@ -185,13 +213,42 @@ for (model_name in names(MODELS)) {
 
   if (!is.null(fit)) {
 
+    # Visual: 2-D UMAP scatter of all documents coloured by topic
+    run_block("visual_topics", {
+      p <- visualize_topics(fit)
+      save_html(p, file.path(vis_dir, "topics_scatter.html"))
+      p
+    }, res)
+
+    # Visual: horizontal bar charts of top c-TF-IDF terms per topic
+    run_block("visual_barchart", {
+      p <- visualize_barchart(fit)
+      save_html(p, file.path(vis_dir, "topics_barchart.html"))
+      p
+    }, res)
+
+    # Visual: hierarchical dendrogram of topic relationships
+    run_block("visual_hierarchy", {
+      h <- hierarchical_topics(fit)
+      saveRDS(h, file.path(model_dir, "hierarchy.rds"))
+      p <- visualize_hierarchy(h, fit = fit)
+      save_html(p, file.path(vis_dir, "topics_hierarchy.html"))
+      p
+    }, res)
+
     # ---- [5] topic_quality ---------------------------------------------
-    run_block("topic_quality", {
+    tq <- run_block("topic_quality", {
       tq <- topic_quality(fit)
       saveRDS(tq, file.path(model_dir, "topic_quality.rds"))
       log_msg("    mean silhouette=",
               round(mean(tq$scores$silhouette, na.rm = TRUE), 3))
       tq
+    }, res)
+    # Visual: silhouette + density scores per topic as a bubble/bar chart
+    run_block("visual_quality", {
+      p <- visualize_quality(tq)
+      save_html(p, file.path(vis_dir, "topic_quality.html"))
+      p
     }, res)
 
     # ---- [6] topic_coherence (NPMI) ------------------------------------
@@ -213,11 +270,17 @@ for (model_name in names(MODELS)) {
     }, res)
 
     # ---- [8] compare_topics --------------------------------------------
-    run_block("compare_topics", {
+    comp <- run_block("compare_topics", {
       comp <- compare_topics(fit, groups, verbose = FALSE)
       saveRDS(comp, file.path(model_dir, "compare_topics.rds"))
       log_msg("    ", nrow(comp$table), " topic-group rows")
       comp
+    }, res)
+    # Visual: grouped bar chart showing topic share per group
+    run_block("visual_comparison", {
+      p <- visualize_comparison(comp)
+      save_html(p, file.path(vis_dir, "topic_comparison.html"))
+      p
     }, res)
 
     # ---- [9] reduce_topics (keep ~50 %) --------------------------------
@@ -241,11 +304,23 @@ for (model_name in names(MODELS)) {
     }, res)
 
     # ---- [11] topics_over_time -----------------------------------------
-    run_block("topics_over_time", {
+    tot <- run_block("topics_over_time", {
       tot <- topics_over_time(fit, timestamps = years)
       saveRDS(tot, file.path(model_dir, "topics_over_time.rds"))
       log_msg("    ", nrow(tot), " topic-year rows")
       tot
+    }, res)
+    # Visual: line chart of topic frequency over time
+    run_block("visual_topics_over_time", {
+      p <- visualize_topics_over_time(tot)
+      save_html(p, file.path(vis_dir, "topics_over_time.html"))
+      p
+    }, res)
+    # Visual: alluvial / stream chart of topic flow across time
+    run_block("visual_topic_flow", {
+      p <- visualize_topic_flow(tot)
+      save_html(p, file.path(vis_dir, "topic_flow.html"))
+      p
     }, res)
 
     # ---- [12] save / load bertopic -------------------------------------
@@ -261,11 +336,17 @@ for (model_name in names(MODELS)) {
   }  # end !is.null(fit)
 
   # ---- [13] stability_analysis (independent of base fit) ---------------
-  run_block("stability_analysis", {
+  stab <- run_block("stability_analysis", {
     stab <- stability_analysis(docs, emb, n_runs = 3L, verbose = FALSE)
     saveRDS(stab, file.path(model_dir, "stability.rds"))
     log_msg("    mean ARI=", round(stab$mean_ari, 3))
     stab
+  }, res)
+  # Visual: ARI distribution across run pairs
+  run_block("visual_stability", {
+    p <- visualize_stability(stab)
+    save_html(p, file.path(vis_dir, "stability.html"))
+    p
   }, res)
 
   # ---- [14] pos_representation — VERB ----------------------------------
@@ -382,10 +463,17 @@ for (model_name in names(MODELS)) {
 # =============================================================================
 
 all_steps <- c(
-  "load_encoder", "embed_cached", "sweep_topics", "fit_default",
-  "topic_quality", "topic_coherence_npmi", "topic_coherence_cv",
-  "compare_topics", "reduce_topics", "reduce_outliers",
-  "topics_over_time", "persistence", "stability_analysis",
+  "load_encoder", "embed_cached",
+  "sweep_topics",        "visual_sweep",
+  "fit_default",
+  "visual_topics",       "visual_barchart",     "visual_hierarchy",
+  "topic_quality",       "visual_quality",
+  "topic_coherence_npmi", "topic_coherence_cv",
+  "compare_topics",      "visual_comparison",
+  "reduce_topics", "reduce_outliers",
+  "topics_over_time",    "visual_topics_over_time", "visual_topic_flow",
+  "persistence",
+  "stability_analysis",  "visual_stability",
   "fit_pos_verb", "fit_pos_noun", "fit_pos_pattern", "fit_cvalue",
   "zero_shot_topics", "guided_fit", "fit_bigrams"
 )
