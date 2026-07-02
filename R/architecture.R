@@ -943,3 +943,210 @@ mpnet_model <- torch::nn_module(
     self$encoder(x, ext)              # (B, L, hidden_size)
   }
 )
+
+
+# =============================================================================
+# CLASSIFICATION AND TOKEN-LABELING HEADS
+#
+# Fine-tuned models add a small "head" on top of the BERT/RoBERTa backbone to
+# map contextualised hidden states to task outputs (sentiment labels, NER tags,
+# VAD regression scores, …).  The backbone weights are identical to those used
+# for embedding; only the head is new.
+#
+# WHY TWO DIFFERENT HEAD DESIGNS?
+# --------------------------------
+# BERT fine-tuning papers introduced the "pooler" pattern: the [CLS] token's
+# hidden state is passed through a dense layer + tanh (the BertPooler), then a
+# linear classifier.  This is BertForSequenceClassification.
+#
+# RoBERTa (and XLM-RoBERTa, CamemBERT) uses a slightly different head called
+# RobertaClassificationHead: it skips the separate pooler and instead applies
+# dropout → dense → tanh → dropout → out_proj directly on the [CLS] vector.
+# The weight key names differ too (classifier.dense / classifier.out_proj vs.
+# pooler.dense / classifier).
+#
+# For token classification (NER, POS tagging), ALL architectures use the same
+# head: a single linear layer applied to every token position independently.
+# The label set (e.g. B-PER, I-PER, O, …) is read from config.json's id2label.
+#
+# WEIGHT KEY MAPPING
+# ------------------
+# These R modules are structured to mirror the Python class hierarchy exactly,
+# so that checkpoint keys map one-to-one after the top-level prefix is stripped
+# by .normalize_key() in weight_loading.R:
+#
+#   BertForSequenceClassification:
+#     bert.embeddings.*  →  embeddings.*
+#     bert.encoder.*     →  encoder.*
+#     bert.pooler.*      →  pooler.*       (bert_pooler below)
+#     classifier.*       →  classifier.*
+#
+#   RobertaForSequenceClassification / XLMRobertaForSequenceClassification:
+#     roberta.embeddings.*          →  embeddings.*
+#     roberta.encoder.*             →  encoder.*
+#     classifier.dense.*            →  classifier.dense.*
+#     classifier.out_proj.*         →  classifier.out_proj.*
+#
+#   BertForTokenClassification / RobertaForTokenClassification:
+#     bert./roberta.embeddings.*    →  embeddings.*
+#     bert./roberta.encoder.*       →  encoder.*
+#     classifier.*                  →  classifier.*
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# bert_pooler — CLS-token pooler used by BertForSequenceClassification
+#
+# During BERT pre-training the [CLS] token is used for next-sentence prediction.
+# Fine-tuned classifiers read the same token's hidden state, pass it through a
+# dense layer and tanh to produce the "pooled" sentence representation, then
+# feed that into the final linear classifier.
+#
+# Weight keys: pooler.dense.weight / pooler.dense.bias
+# -----------------------------------------------------------------------------
+
+#' BERT CLS-token pooler (dense + tanh on the [CLS] hidden state)
+#' @keywords internal
+#' @noRd
+bert_pooler <- torch::nn_module(
+  "BertPooler",
+  initialize = function(config) {
+    # Projects the CLS hidden state: hidden_size → hidden_size.
+    self$dense <- torch::nn_linear(config$hidden_size, config$hidden_size)
+  },
+  forward = function(hidden_states) {
+    # hidden_states: (B, L, H).  Take position 1 (R 1-based) = [CLS] token.
+    cls <- hidden_states[, 1, ]                 # (B, H)
+    torch::torch_tanh(self$dense(cls))          # (B, H)
+  }
+)
+
+
+# -----------------------------------------------------------------------------
+# roberta_classification_head — RoBERTa's built-in classification head
+#
+# Unlike BERT's separate pooler, RoBERTa packs everything into one module:
+# CLS extract → dropout → dense → tanh → dropout → out_proj.
+# In eval() mode dropout is a no-op, so the effective path is:
+#   CLS → dense → tanh → out_proj.
+#
+# Weight keys: classifier.dense.* / classifier.out_proj.*
+# -----------------------------------------------------------------------------
+
+#' RoBERTa / XLM-RoBERTa sequence classification head
+#' @keywords internal
+#' @noRd
+roberta_classification_head <- torch::nn_module(
+  "RobertaClassificationHead",
+  initialize = function(config) {
+    dp <- config$hidden_dropout_prob %||% config$classifier_dropout %||% 0.1
+    self$dense    <- torch::nn_linear(config$hidden_size, config$hidden_size)
+    self$dropout  <- torch::nn_dropout(p = dp)
+    self$out_proj <- torch::nn_linear(config$hidden_size, config$num_labels)
+  },
+  forward = function(hidden_states) {
+    x <- hidden_states[, 1, ]          # CLS token: (B, H)
+    x <- self$dropout(x)               # no-op in eval() mode
+    x <- torch::torch_tanh(self$dense(x))
+    x <- self$dropout(x)
+    self$out_proj(x)                   # (B, num_labels)
+  }
+)
+
+
+# -----------------------------------------------------------------------------
+# bert_for_classification — Complete BERT sequence classifier
+#
+# Flat structure: embeddings + encoder + pooler + classifier all live at the
+# same level so that checkpoint keys (after stripping "bert.") map directly
+# to R nn_module attribute paths.  This mirrors BertForSequenceClassification.
+# -----------------------------------------------------------------------------
+
+#' BERT-style sequence classification model (backbone + pooler + classifier)
+#' @keywords internal
+#' @noRd
+bert_for_classification <- torch::nn_module(
+  "BertForSequenceClassification",
+  initialize = function(config) {
+    dp <- config$hidden_dropout_prob %||% config$classifier_dropout %||% 0.1
+    self$embeddings <- bert_embeddings(config)
+    self$encoder    <- bert_encoder(config)
+    self$pooler     <- bert_pooler(config)          # CLS → dense → tanh
+    self$dropout    <- torch::nn_dropout(p = dp)
+    self$classifier <- torch::nn_linear(config$hidden_size, config$num_labels)
+  },
+  forward = function(input_ids, attention_mask) {
+    ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
+      unsqueeze(2)$unsqueeze(2) * -1e4      # (B, 1, 1, L): 0 real, -1e4 pad
+    x <- self$embeddings(input_ids)          # (B, L, H)
+    x <- self$encoder(x, ext)               # (B, L, H)
+    x <- self$pooler(x)                     # (B, H)  — extracts + transforms CLS
+    x <- self$dropout(x)                    # no-op at eval time
+    self$classifier(x)                      # (B, num_labels) raw logits
+  }
+)
+
+
+# -----------------------------------------------------------------------------
+# roberta_for_classification — Complete RoBERTa sequence classifier
+#
+# Same flat structure as bert_for_classification but uses roberta_classification_
+# head (which has no separate pooler).  Mirrors RobertaForSequenceClassification
+# and XLMRobertaForSequenceClassification — both use attribute name "roberta"
+# for the backbone, so ".normalize_key() strips "roberta." from checkpoint keys.
+# -----------------------------------------------------------------------------
+
+#' RoBERTa / XLM-RoBERTa sequence classification model
+#' @keywords internal
+#' @noRd
+roberta_for_classification <- torch::nn_module(
+  "RobertaForSequenceClassification",
+  initialize = function(config) {
+    self$embeddings <- bert_embeddings(config)     # RoBERTa pos offset handled in bert_embeddings
+    self$encoder    <- bert_encoder(config)
+    self$classifier <- roberta_classification_head(config)
+  },
+  forward = function(input_ids, attention_mask) {
+    ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
+      unsqueeze(2)$unsqueeze(2) * -1e4
+    x <- self$embeddings(input_ids)
+    x <- self$encoder(x, ext)
+    self$classifier(x)     # (B, num_labels)
+  }
+)
+
+
+# -----------------------------------------------------------------------------
+# bert_for_token_classification — Token-level classifier (NER, POS, etc.)
+#
+# Unlike sequence classifiers that reduce to one vector per sentence, token
+# classifiers keep the full (B, L, H) output and apply a linear layer to
+# every token position independently.  This gives (B, L, num_labels) logits:
+# one label distribution per token.
+#
+# The same structure works for both BERT and RoBERTa checkpoints because both
+# store the classifier weights at the top level (not under "bert." or "roberta.")
+# and the backbone keys are already mapped correctly.
+# -----------------------------------------------------------------------------
+
+#' BERT / RoBERTa token classification model (NER, POS tagging)
+#' @keywords internal
+#' @noRd
+bert_for_token_classification <- torch::nn_module(
+  "BertForTokenClassification",
+  initialize = function(config) {
+    dp <- config$hidden_dropout_prob %||% config$classifier_dropout %||% 0.1
+    self$embeddings <- bert_embeddings(config)
+    self$encoder    <- bert_encoder(config)
+    self$dropout    <- torch::nn_dropout(p = dp)
+    self$classifier <- torch::nn_linear(config$hidden_size, config$num_labels)
+  },
+  forward = function(input_ids, attention_mask) {
+    ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
+      unsqueeze(2)$unsqueeze(2) * -1e4
+    x <- self$embeddings(input_ids)    # (B, L, H)
+    x <- self$encoder(x, ext)          # (B, L, H)
+    x <- self$dropout(x)               # no-op at eval time
+    self$classifier(x)                 # (B, L, num_labels) — one dist. per token
+  }
+)

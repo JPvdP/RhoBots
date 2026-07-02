@@ -13,6 +13,9 @@ embed_texts_cached(
   max_length = 256L,
   normalize = TRUE,
   device = "cpu",
+  prefix = NULL,
+  chunk_strategy = c("truncate", "mean", "first"),
+  chunk_overlap = 0L,
   verbose = interactive()
 )
 }
@@ -31,8 +34,8 @@ written to this path.  Pass \code{NULL} to skip caching entirely.}
 \item{overwrite}{If \code{TRUE}, always recompute even if the cache file
 exists (default \code{FALSE}).}
 
-\item{batch_size, max_length, normalize, device}{Forwarded to
-\code{\link{embed_texts}}.}
+\item{batch_size, max_length, normalize, device, prefix, chunk_strategy, chunk_overlap}{Forwarded to \code{\link{embed_texts}}.  \code{prefix} defaults to
+\code{NULL}, inheriting the encoder's stored prefix.}
 
 \item{verbose}{Print progress messages.}
 }

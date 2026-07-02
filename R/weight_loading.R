@@ -94,7 +94,10 @@
 #' @keywords internal
 #' @noRd
 .normalize_key <- function(key) {
-  for (pfx in c("bert.", "mpnet.", "model.", "0.auto_model.", "auto_model.")) {
+  # "roberta." covers RobertaFor*, XLMRobertaFor*, CamembertFor* — all three store
+  # the backbone under the Python attribute name "roberta", so checkpoint keys
+  # look like "roberta.encoder.layer.0.attention…" regardless of the model variant.
+  for (pfx in c("bert.", "roberta.", "mpnet.", "model.", "0.auto_model.", "auto_model.")) {
     if (startsWith(key, pfx)) key <- substring(key, nchar(pfx) + 1)
   }
   key <- sub("attention\\.self\\.", "attention.self_.", key)

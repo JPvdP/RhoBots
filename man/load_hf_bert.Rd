@@ -4,7 +4,7 @@
 \alias{load_hf_bert}
 \title{Load a BERT-family model from HuggingFace for use in R}
 \usage{
-load_hf_bert(repo_id, weights_path = NULL)
+load_hf_bert(repo_id, weights_path = NULL, prefix = "")
 }
 \arguments{
 \item{repo_id}{A HuggingFace repo ID, e.g.
@@ -55,6 +55,15 @@ Space) and pass the result via \code{weights_path}.
 \dontrun{
   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
   emb <- embed_texts(enc, c("Hello world.", "Another sentence."))
+
+  # BGE model — prefix at load time, applied automatically on every embed call
+  enc <- load_hf_bert("BAAI/bge-base-en-v1.5",
+                       prefix = "Represent this sentence: ")
+
+  # E5 model — passage prefix for documents
+  enc <- load_hf_bert("intfloat/e5-base-v2", prefix = "passage: ")
+  # Override per-call for query-side embedding:
+  query_emb <- embed_texts(enc, queries, prefix = "query: ")
 
   # With a custom weights file (e.g. safetensors from an unmerged PR)
   enc <- load_hf_bert("pritamdeka/S-Scibert-snli-multinli-stsb",

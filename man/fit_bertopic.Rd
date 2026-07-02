@@ -10,6 +10,7 @@ fit_bertopic(
   embeddings = NULL,
   dim_reduction_model = NULL,
   cluster_model = NULL,
+  representation_model = NULL,
   umap_n_neighbors = 15,
   umap_n_components = 5,
   umap_min_dist = 0,
