@@ -50,6 +50,13 @@ rsconnect/
 # macOS
 .DS_Store
 
+# Data files (not for version control)
+*.csv
+*.rdata
+*.Rdata
+*.RData
+output/
+
 # Quarto
 .quarto
 
