@@ -131,6 +131,7 @@ visualize_barchart <- function(fit,
 
 #' Visualise documents in topic space
 #'
+#' @export
 visualize_topics <- function(fit,
                               dims           = NULL,
                               label_topics   = TRUE,
