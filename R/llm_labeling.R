@@ -1,7 +1,9 @@
 # =============================================================================
 # llm_labeling.R — Generate human-readable topic labels via an LLM API.
 #
-# Supports Anthropic (Claude) and OpenAI (GPT) via httr2.
+# Supports Anthropic (Claude), OpenAI (GPT), and Ollama (local) via httr2.
+# Ollama uses the OpenAI-compatible endpoint at http://localhost:11434/v1 so
+# any model pulled with `ollama pull <model>` works without an API key.
 # =============================================================================
 
 .check_httr2 <- function() {
@@ -85,24 +87,54 @@
   trimws(httr2::resp_body_json(resp)$choices[[1L]]$message$content)
 }
 
+.call_ollama <- function(prompt, api_key, model) {
+  .check_httr2()
+  model <- model %||% "llama3.2"
+  req <- httr2::request("http://localhost:11434/v1/chat/completions") |>
+    httr2::req_headers(`Content-Type` = "application/json") |>
+    httr2::req_body_json(list(
+      model      = model,
+      max_tokens = 32L,
+      messages   = list(list(role = "user", content = prompt))
+    )) |>
+    httr2::req_error(is_error = function(r) FALSE) |>
+    httr2::req_timeout(120)
+
+  resp <- httr2::req_perform(req)
+  if (httr2::resp_status(resp) != 200L)
+    stop("Ollama returned status ", httr2::resp_status(resp),
+         ". Is Ollama running? Start it with: ollama serve\n",
+         httr2::resp_body_string(resp))
+  trimws(httr2::resp_body_json(resp)$choices[[1L]]$message$content)
+}
+
 #' Label topics using a large language model
 #'
 #' For each non-noise topic, builds a prompt containing the top c-TF-IDF terms
 #' and up to \code{n_representative_docs} representative documents, sends it to
-#' an LLM API (Anthropic Claude or OpenAI GPT), and stores the returned label
-#' in \code{fit$topic_labels}.
+#' an LLM API, and stores the returned label in \code{fit$topic_labels}.
 #'
-#' Requires the \pkg{httr2} package and a valid API key.  The key can be
-#' supplied directly via \code{api_key} or read from the environment variables
-#' \code{ANTHROPIC_API_KEY} / \code{OPENAI_API_KEY}.
+#' Three providers are supported:
+#' \describe{
+#'   \item{\code{"anthropic"}}{Anthropic Claude via the Messages API. Requires
+#'     \code{api_key} or the \code{ANTHROPIC_API_KEY} environment variable.}
+#'   \item{\code{"openai"}}{OpenAI GPT via the Chat Completions API. Requires
+#'     \code{api_key} or \code{OPENAI_API_KEY}.}
+#'   \item{\code{"ollama"}}{Local Ollama server (OpenAI-compatible endpoint at
+#'     \code{http://localhost:11434/v1}). No API key required. Start the server
+#'     with \code{ollama serve} and pull a model with
+#'     \code{ollama pull llama3.2} before use.}
+#' }
+#'
+#' Requires the \pkg{httr2} package.
 #'
 #' @param fit A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.
-#' @param provider LLM provider: \code{"anthropic"} (default) or
-#'   \code{"openai"}.
-#' @param api_key API key string.  Defaults to the relevant environment
-#'   variable if not supplied.
+#' @param provider LLM provider: \code{"anthropic"} (default), \code{"openai"},
+#'   or \code{"ollama"} (local, no API key needed).
+#' @param api_key API key string.  Ignored for \code{"ollama"}.  Defaults to
+#'   the relevant environment variable for cloud providers.
 #' @param model Model identifier.  Defaults to \code{"claude-haiku-4-5-20251001"}
-#'   (Anthropic) or \code{"gpt-4o-mini"} (OpenAI).
+#'   (Anthropic), \code{"gpt-4o-mini"} (OpenAI), or \code{"llama3.2"} (Ollama).
 #' @param top_n_terms Number of top terms included in the prompt (default 10).
 #' @param n_representative_docs Number of representative documents included
 #'   in the prompt (default 3).
@@ -112,7 +144,7 @@
 #' @return The input \code{fit} with updated \code{$topic_labels}.
 #' @export
 label_topics_llm <- function(fit,
-                              provider              = c("anthropic", "openai"),
+                              provider              = c("anthropic", "openai", "ollama"),
                               api_key               = NULL,
                               model                 = NULL,
                               top_n_terms           = 10L,
@@ -121,14 +153,18 @@ label_topics_llm <- function(fit,
                               verbose               = TRUE) {
   provider <- match.arg(provider)
 
-  if (is.null(api_key)) {
+  if (provider != "ollama" && is.null(api_key)) {
     env_var <- if (provider == "anthropic") "ANTHROPIC_API_KEY" else "OPENAI_API_KEY"
     api_key <- Sys.getenv(env_var)
     if (!nzchar(api_key))
       stop("Provide 'api_key' or set the ", env_var, " environment variable.")
   }
 
-  call_fn <- if (provider == "anthropic") .call_anthropic else .call_openai
+  call_fn <- switch(provider,
+    anthropic = .call_anthropic,
+    openai    = .call_openai,
+    ollama    = .call_ollama
+  )
 
   topics_nn <- sort(setdiff(unique(fit$clusters), -1L))
   if (length(topics_nn) == 0L)

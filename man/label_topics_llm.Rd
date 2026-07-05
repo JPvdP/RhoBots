@@ -6,7 +6,7 @@
 \usage{
 label_topics_llm(
   fit,
-  provider = c("anthropic", "openai"),
+  provider = c("anthropic", "openai", "ollama"),
   api_key = NULL,
   model = NULL,
   top_n_terms = 10L,
@@ -18,14 +18,14 @@ label_topics_llm(
 \arguments{
 \item{fit}{A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.}
 
-\item{provider}{LLM provider: \code{"anthropic"} (default) or
-\code{"openai"}.}
+\item{provider}{LLM provider: \code{"anthropic"} (default), \code{"openai"},
+or \code{"ollama"} (local, no API key needed).}
 
-\item{api_key}{API key string.  Defaults to the relevant environment
-variable if not supplied.}
+\item{api_key}{API key string.  Ignored for \code{"ollama"}.  Defaults to
+the relevant environment variable for cloud providers.}
 
 \item{model}{Model identifier.  Defaults to \code{"claude-haiku-4-5-20251001"}
-(Anthropic) or \code{"gpt-4o-mini"} (OpenAI).}
+(Anthropic), \code{"gpt-4o-mini"} (OpenAI), or \code{"llama3.2"} (Ollama).}
 
 \item{top_n_terms}{Number of top terms included in the prompt (default 10).}
 
@@ -43,11 +43,20 @@ The input \code{fit} with updated \code{$topic_labels}.
 \description{
 For each non-noise topic, builds a prompt containing the top c-TF-IDF terms
 and up to \code{n_representative_docs} representative documents, sends it to
-an LLM API (Anthropic Claude or OpenAI GPT), and stores the returned label
-in \code{fit$topic_labels}.
+an LLM API, and stores the returned label in \code{fit$topic_labels}.
 }
 \details{
-Requires the \pkg{httr2} package and a valid API key.  The key can be
-supplied directly via \code{api_key} or read from the environment variables
-\code{ANTHROPIC_API_KEY} / \code{OPENAI_API_KEY}.
+Three providers are supported:
+\describe{
+\item{\code{"anthropic"}}{Anthropic Claude via the Messages API. Requires
+\code{api_key} or the \code{ANTHROPIC_API_KEY} environment variable.}
+\item{\code{"openai"}}{OpenAI GPT via the Chat Completions API. Requires
+\code{api_key} or \code{OPENAI_API_KEY}.}
+\item{\code{"ollama"}}{Local Ollama server (OpenAI-compatible endpoint at
+\code{http://localhost:11434/v1}). No API key required. Start the server
+with \code{ollama serve} and pull a model with
+\code{ollama pull llama3.2} before use.}
+}
+
+Requires the \pkg{httr2} package.
 }
