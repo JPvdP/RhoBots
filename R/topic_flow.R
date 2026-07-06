@@ -182,7 +182,7 @@ fit_topics_over_time <- function(encoder,
       topic  = topics,
       label  = vapply(topics, function(t)
         .format_topic_label(f$topic_labels[[as.character(t)]] %||%
-                              as.character(t), n_words = 4L), character(1L)),
+                              as.character(t)), character(1L)),
       count  = vapply(topics, function(t) sum(f$clusters == t), integer(1L)),
       status = NA_character_,
       stringsAsFactors = FALSE

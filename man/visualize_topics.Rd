@@ -8,7 +8,7 @@ visualize_topics(
   fit,
   dims = NULL,
   label_topics = TRUE,
-  n_label_words = 3L,
+  max_label_chars = 30L,
   point_size = 5L,
   noise_color = "#cccccc",
   width = 900L,

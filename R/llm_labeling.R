@@ -185,9 +185,7 @@ label_topics_llm <- function(fit,
       }
     )
     if (!is.null(label) && nzchar(trimws(label))) {
-      slug <- gsub("[^a-zA-Z0-9]+", "_", trimws(label))
-      slug <- gsub("^_|_$", "", tolower(slug))
-      fit$topic_labels[[as.character(t)]] <- paste0(t, "_", slug)
+      fit$topic_labels[[as.character(t)]] <- paste0(t, "_", trimws(label))
       if (verbose) message("  Topic ", t, ": ", label)
     }
   }

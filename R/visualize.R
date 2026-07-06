@@ -2,11 +2,20 @@
 # visualize.R — Interactive visualizations for bertopic_fit objects.
 # =============================================================================
 
-# Short display label: "0_word1_word2_word3_word4"  ->  "0: word1, word2, word3"
-.format_topic_label <- function(label, n_words = 3L) {
-  parts <- strsplit(label, "_")[[1L]]
-  words <- parts[seq(2L, min(n_words + 1L, length(parts)))]
-  paste0(parts[1L], ": ", paste(words, collapse = ", "))
+# Short display label for any topic label format.
+# Strips the leading "id_" prefix, replaces remaining underscores with spaces,
+# and truncates to max_chars with an ellipsis if needed.
+.format_topic_label <- function(label, max_chars = 30L, n_words = NULL) {
+  text <- sub("^-?[0-9]+_", "", label)   # strip numeric id prefix
+  text <- gsub("_", " ", text)           # underscores -> spaces
+  text <- trimws(text)
+  if (!is.null(n_words)) {
+    words <- strsplit(text, "\\s+")[[1L]]
+    text  <- paste(words[seq_len(min(n_words, length(words)))], collapse = " ")
+  }
+  if (nchar(text) > max_chars)
+    text <- paste0(substr(text, 1L, max_chars - 1L), "…")
+  text
 }
 
 #' Visualise documents in topic space
@@ -108,8 +117,7 @@ visualize_barchart <- function(fit,
       y         = 1 - row_i / n_rows,
       xref      = "paper", yref = "paper",
       text      = paste0("<b>", .format_topic_label(
-        fit$topic_labels[[as.character(t)]] %||% as.character(t),
-        n_words = 4L), "</b>"),
+        fit$topic_labels[[as.character(t)]] %||% as.character(t)), "</b>"),
       showarrow = FALSE,
       xanchor   = "center", yanchor   = "bottom",
       font      = list(size = 11L)
@@ -133,13 +141,13 @@ visualize_barchart <- function(fit,
 #'
 #' @export
 visualize_topics <- function(fit,
-                              dims           = NULL,
-                              label_topics   = TRUE,
-                              n_label_words  = 3L,
-                              point_size     = 5L,
-                              noise_color    = "#cccccc",
-                              width          = 900L,
-                              height         = 700L) {
+                              dims            = NULL,
+                              label_topics    = TRUE,
+                              max_label_chars = 30L,
+                              point_size      = 5L,
+                              noise_color     = "#cccccc",
+                              width           = 900L,
+                              height          = 700L) {
   if (!requireNamespace("plotly", quietly = TRUE))
     stop("Please install.packages('plotly') to use visualize_topics().")
 
@@ -163,7 +171,9 @@ visualize_topics <- function(fit,
   # --- Document data -------------------------------------------------------
   topic_ids <- fit$clusters
   top_label <- vapply(topic_ids, function(t)
-    fit$topic_labels[[as.character(t)]] %||% as.character(t), character(1))
+    .format_topic_label(fit$topic_labels[[as.character(t)]] %||%
+                          as.character(t), max_chars = max_label_chars),
+    character(1))
 
   hover <- paste0(
     "<b>", top_label, "</b><br>",
@@ -207,7 +217,7 @@ visualize_topics <- function(fit,
     col  <- topic_col[as.character(t)]
     lbl  <- .format_topic_label(
       fit$topic_labels[[as.character(t)]] %||% as.character(t),
-      n_words = n_label_words
+      max_chars = max_label_chars
     )
     p <- plotly::add_trace(p,
       x = rows$x, y = rows$y,
@@ -228,7 +238,7 @@ visualize_topics <- function(fit,
     cl <- vapply(topics_nonnoise, function(t)
       .format_topic_label(
         fit$topic_labels[[as.character(t)]] %||% as.character(t),
-        n_words = n_label_words
+        max_chars = max_label_chars
       ), character(1))
 
     p <- plotly::add_annotations(p,
@@ -285,7 +295,7 @@ visualize_quality <- function(q, fit = NULL, width = 900L, height = 750L) {
   lbls <- if (!is.null(fit)) {
     vapply(topics, function(t)
       .format_topic_label(
-        fit$topic_labels[[as.character(t)]] %||% as.character(t), n_words = 3L
+        fit$topic_labels[[as.character(t)]] %||% as.character(t)
       ), character(1L))
   } else {
     paste0("T", topics)

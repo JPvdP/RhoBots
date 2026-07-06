@@ -363,14 +363,18 @@ paper_topics <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Human-readable topic label (use LLM label if available, else auto-slug)
+# Human-readable topic label, formatted (no underscores, truncated to 30 chars)
+.fmt <- function(raw) {
+  text <- sub("^-?[0-9]+_", "", raw)   # strip numeric id prefix
+  text <- gsub("_", " ", text)          # underscores -> spaces (auto labels)
+  text <- trimws(text)
+  if (nchar(text) > 30L) paste0(substr(text, 1L, 29L), "…") else text
+}
+
 paper_topics$topic_label <- vapply(paper_topics$topic, function(t) {
   if (t == -1L) return("Noise")
   lbl <- fit$topic_labels[[as.character(t)]]
-  if (is.null(lbl) || !nzchar(lbl))
-    paste0("Topic ", t)
-  else
-    lbl
+  if (is.null(lbl) || !nzchar(lbl)) paste0("Topic ", t) else .fmt(lbl)
 }, character(1))
 
 # Merge: affiliation table gets a topic column (all rows for a paper share one topic)
