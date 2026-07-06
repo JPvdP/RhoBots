@@ -381,6 +381,69 @@ paper_topics$topic_label <- vapply(paper_topics$topic, function(t) {
 affil_topics <- affil |>
   left_join(paper_topics, by = "EID")
 
+# ── 4b2. 2-D topic map ────────────────────────────────────────────────────────
+# One bubble per topic, positioned at its centroid in the UMAP document space.
+# Bubble size = number of documents in the topic (log-scaled for readability).
+# Top terms are shown in the hover tooltip.
+topics_nonnoise <- sort(setdiff(unique(fit$clusters), -1L))
+coords2d        <- fit$layout2d
+
+topic_map_df <- data.frame(
+  topic = topics_nonnoise,
+  x     = vapply(topics_nonnoise,
+                 function(t) mean(coords2d[fit$clusters == t, 1L]), numeric(1L)),
+  y     = vapply(topics_nonnoise,
+                 function(t) mean(coords2d[fit$clusters == t, 2L]), numeric(1L)),
+  n     = vapply(topics_nonnoise,
+                 function(t) sum(fit$clusters == t), integer(1L)),
+  label = vapply(topics_nonnoise, function(t) {
+    lbl <- fit$topic_labels[[as.character(t)]]
+    if (is.null(lbl) || !nzchar(lbl)) paste0("Topic ", t) else .fmt(lbl)
+  }, character(1L)),
+  stringsAsFactors = FALSE
+)
+
+# Top terms per topic for hover text
+topic_map_df$top_terms <- vapply(topics_nonnoise, function(t) {
+  tt <- fit$topic_terms[fit$topic_terms$topic == t, ]
+  tt <- tt[order(tt$rank), ]
+  paste(head(tt$term, 8L), collapse = ", ")
+}, character(1L))
+
+topic_map_df$hover <- paste0(
+  "<b>", topic_map_df$label, "</b><br>",
+  "Documents: ", topic_map_df$n, "<br>",
+  "Terms: ", topic_map_df$top_terms
+)
+
+pal_tm <- grDevices::hcl.colors(nrow(topic_map_df), "Dynamic")
+
+p_topic_map <- plot_ly(
+  topic_map_df,
+  x    = ~x, y = ~y,
+  type = "scatter", mode = "markers+text",
+  marker = list(
+    size    = ~sqrt(n) * 3,
+    color   = pal_tm,
+    opacity = 0.85,
+    line    = list(color = "white", width = 1.5)
+  ),
+  text         = ~label,
+  textposition = "top center",
+  textfont     = list(size = 11L),
+  hovertext    = ~hover,
+  hoverinfo    = "text"
+) |>
+  layout(
+    title  = "2-D topic map (bubble size = document count)",
+    xaxis  = list(title = "UMAP 1", zeroline = FALSE, showgrid = FALSE),
+    yaxis  = list(title = "UMAP 2", zeroline = FALSE, showgrid = FALSE),
+    plot_bgcolor  = "#f7f7f7",
+    paper_bgcolor = "white",
+    showlegend    = FALSE
+  )
+save_html(p_topic_map, file.path(OUT, "06b_topic_map_2d.html"))
+
 # ── 4c. World map coloured by dominant topic per country ─────────────────────
 # For each country, find its modal (most common) topic across all its papers.
 country_topic <- affil_topics |>
