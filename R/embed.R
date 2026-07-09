@@ -276,70 +276,64 @@ embed_texts.bert_encoder <- function(encoder, texts,
   tokenizer <- encoder$tokenizer
   pooling   <- encoder$pooling %||% "mean"
 
-  # eval() disables dropout and other training-time randomness, ensuring
-  # deterministic and reproducible outputs.
   model$eval()
   model$to(device = device)
 
-  # Configure the tokenizer to handle variable-length inputs:
-  #   enable_padding()          — adds 0 IDs + 0 attention masks to the right
-  #   enable_truncation(n)      — cuts off at n tokens (including [CLS] / [SEP])
   tokenizer$enable_padding()
   tokenizer$enable_truncation(max_length)
 
-  n   <- length(texts)
-  out <- vector("list", ceiling(n / batch_size))   # pre-allocate result list
-  idx <- 0L
+  n <- length(texts)
+
+  # --- Smart batching: sort by approximate length to minimise padding waste ---
+  # Texts within a batch are padded to the longest sequence in that batch.
+  # Sorting by character length (a cheap proxy for token length) groups similar-
+  # length texts together, dramatically reducing wasted padding computation.
+  # We record the original order so results are returned in the input order.
+  order_idx    <- order(nchar(texts, type = "bytes"))
+  restore_idx  <- order(order_idx)
+  texts_sorted <- texts[order_idx]
+
+  # Pre-allocate the result matrix — avoids repeated rbind across batches.
+  # hidden_size is not known until after the first forward pass, so we fill it in then.
+  result     <- NULL
+  hidden_size <- NULL
 
   for (start in seq(1L, n, by = batch_size)) {
     end   <- min(start + batch_size - 1L, n)
-    batch <- texts[start:end]
+    batch <- texts_sorted[start:end]
 
-    # Tokenize the current batch.  Returns a list of Encoding objects.
-    enc <- tokenizer$encode_batch(batch)
-
-    # Extract IDs and attention masks into plain R integer vectors.
+    enc   <- tokenizer$encode_batch(batch)
     ids   <- lapply(enc, function(e) e$ids)
     masks <- lapply(enc, function(e) e$attention_mask)
 
-    # Find the longest sequence in this batch (padding target).
     Lmax  <- max(vapply(ids, length, integer(1L)))
-
-    # Pad each sequence to Lmax by appending zeros (the padding token ID).
     pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
-    ids_m <- do.call(rbind, lapply(ids,   pad))   # integer matrix (batch, Lmax)
-    msk_m <- do.call(rbind, lapply(masks, pad))   # same shape, 1s and 0s
+    ids_m <- do.call(rbind, lapply(ids,   pad))
+    msk_m <- do.call(rbind, lapply(masks, pad))
 
-    # Wrap as torch tensors and move to the target device.
-    # torch_long() = int64, required by nn_embedding.
-    input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$
-      to(device = device)
-    attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$
-      to(device = device)
+    input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
+    attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
 
-    # with_no_grad() tells torch not to record the computational graph for
-    # gradient computation.  Since we are only doing inference (not training),
-    # this saves memory and speeds up the forward pass.
     torch::with_no_grad({
-      # Run the full transformer forward pass: architecture.R → (B, L, H)
       hidden <- model(input_ids, attn_mask)
-
-      # Pool across the sequence dimension to get one vector per sentence.
       pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
-
-      # L2 normalise each row: after this, ||row|| = 1 for every sentence,
-      # and cosine similarity between two rows equals their dot product.
-      # nnf_normalize(x, p=2, dim=2) divides each row by its L2 norm.
       if (normalize) pooled <- torch::nnf_normalize(pooled, p = 2, dim = 2)
     })
 
-    idx        <- idx + 1L
-    out[[idx]] <- as.array(pooled$cpu())   # move back to CPU and convert to R array
+    batch_arr <- as.matrix(pooled$cpu())
+
+    # Allocate result matrix on first batch now that hidden_size is known.
+    if (is.null(result)) {
+      hidden_size <- ncol(batch_arr)
+      result      <- matrix(0, nrow = n, ncol = hidden_size)
+    }
+    result[start:end, ] <- batch_arr
+
     if (verbose) message(sprintf("  embedded %d / %d", end, n))
   }
 
-  # Stack all batch results into a single (n_texts × hidden_size) matrix.
-  do.call(rbind, out)
+  # Restore original document order before returning.
+  result[restore_idx, , drop = FALSE]
 }
 
 
@@ -449,18 +443,20 @@ embed_texts.default <- function(encoder, texts, ...) {
   }
 
   # Batch-embed all chunks (from all documents) together.
-  # This is more efficient than processing each document's chunks separately
-  # because GPU parallelism is fully utilised across the entire chunk pool.
-  n_chunks <- length(chunk_ids)
-  emb_list <- vector("list", ceiling(n_chunks / batch_size))
-  cidx <- 0L
+  # Sort chunks by length for the same padding-efficiency reason as the main path.
+  n_chunks     <- length(chunk_ids)
+  chunk_order  <- order(vapply(chunk_ids, length, integer(1L)))
+  chunk_ids    <- chunk_ids[chunk_order]
+  chunk_masks  <- chunk_masks[chunk_order]
+  chunk_origin <- chunk_origin[chunk_order]
+
+  all_chunk_emb <- NULL
 
   for (start in seq(1L, n_chunks, by = batch_size)) {
     end   <- min(start + batch_size - 1L, n_chunks)
     b_ids <- chunk_ids[start:end]
     b_msk <- chunk_masks[start:end]
 
-    # Pad all chunks in this batch to the same length.
     Lmax  <- max(vapply(b_ids, length, integer(1L)))
     pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
     ids_m <- do.call(rbind, lapply(b_ids, pad))
@@ -472,17 +468,17 @@ embed_texts.default <- function(encoder, texts, ...) {
     torch::with_no_grad({
       hidden <- model(input_ids, attn_mask)
       pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
-      # Note: we do NOT normalise individual chunk embeddings here.
-      # Normalisation is applied to the AGGREGATED document vector below.
+      # Normalisation applied to the aggregated document vector, not individual chunks.
     })
 
-    cidx <- cidx + 1L
-    emb_list[[cidx]] <- as.array(pooled$cpu())
+    batch_arr <- as.matrix(pooled$cpu())
+    if (is.null(all_chunk_emb)) {
+      all_chunk_emb <- matrix(0, nrow = n_chunks, ncol = ncol(batch_arr))
+    }
+    all_chunk_emb[start:end, ] <- batch_arr
+
     if (verbose) message(sprintf("  embedded %d / %d chunks", end, n_chunks))
   }
-
-  # Flatten all chunk embeddings into one matrix (n_chunks × hidden_size).
-  all_chunk_emb <- do.call(rbind, emb_list)
 
   # Aggregate chunk embeddings back into one vector per original document.
   n           <- length(texts)
