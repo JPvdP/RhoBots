@@ -348,9 +348,9 @@ message("Running parameter sweep (this takes a few minutes)...")
 sw <- sweep_topics(
   docs         = docs,
   embeddings   = emb,
-  n_neighbors  = c(10L, 20L, 30L),
-  n_components = c(5L, 10L),
-  min_pts      = c(10L, 20L, 30L),
+  n_neighbors  = c(10L, 15L, 20L),
+  n_components = c(3L, 5L),      # keep low — HDBSCAN struggles above 5 dims
+  min_pts      = c(5L, 10L, 15L),
   ngram_range    = c(1L, 2L),    # use both unigrams and bigrams in topic terms
   quality_top_n  = 10L,          # evaluate using the top 10 terms per topic
   quality_sample = 1000L,        # silhouette computed on a sample for speed
