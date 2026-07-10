@@ -13,6 +13,6 @@
 #' @param min_pts Integer minimum cluster size / core-distance order.
 #' @return Named list: \code{labels} (IntegerVector), \code{n_mst_edges} (int).
 hdbscan_boruvka_cpp <- function(knn_idx, knn_dist, min_pts) {
-    .Call(`_Rhobots_hdbscan_boruvka_cpp`, knn_idx, knn_dist, min_pts)
+    .Call('_Rhobots_hdbscan_boruvka_cpp', PACKAGE = 'Rhobots', knn_idx, knn_dist, min_pts)
 }
 

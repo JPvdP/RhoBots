@@ -4,7 +4,13 @@
 \alias{visualize_comparison}
 \title{Interactive heatmap of topic–group associations}
 \usage{
-visualize_comparison(comp, top_n_topics = NULL, width = 800L, height = 550L)
+visualize_comparison(
+  comp,
+  top_n_topics = NULL,
+  max_label_chars = 25L,
+  width = 1000L,
+  height = 420L
+)
 }
 \arguments{
 \item{comp}{A \code{compare_topics_result} from \code{\link{compare_topics}}.}
@@ -12,7 +18,10 @@ visualize_comparison(comp, top_n_topics = NULL, width = 800L, height = 550L)
 \item{top_n_topics}{Restrict to the \code{top_n_topics} topics with the
 largest mean absolute statistic.  \code{NULL} (default) shows all topics.}
 
-\item{width, height}{Plot dimensions in pixels (default 800 × 550).}
+\item{max_label_chars}{Maximum characters for topic labels before truncation
+with an ellipsis (default 25).}
+
+\item{width, height}{Plot dimensions in pixels (default 1000 × 420).}
 }
 \value{
 A \code{plotly} figure.
@@ -21,4 +30,8 @@ A \code{plotly} figure.
 Displays the signed chi-square contributions or log\eqn{_2} ratios from
 \code{\link{compare_topics}} as a diverging colour heatmap: blue = over-
 represented in that group, red = under-represented.
+}
+\details{
+Topics are placed on the x-axis (with angled labels) and groups on the
+y-axis, which keeps the chart readable even when topic labels are long.
 }

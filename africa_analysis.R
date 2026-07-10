@@ -3,12 +3,38 @@
 #
 # End-to-end Rhobots demonstration using African research publications.
 #
+# PURPOSE
+# -------
+# This script walks through a complete topic-modeling workflow on a real
+# corpus of 3,328 research abstracts that include at least one African
+# co-author.  It is intended as a teaching example: every major step
+# is annotated with a WHY, not just a WHAT.
+#
+# LEARNING GOALS
+# --------------
+#   1. Understand what it means to "embed" text into a vector space.
+#   2. See how a parameter sweep helps you choose model settings.
+#   3. Fit a topic model and interpret the results.
+#   4. Use topic assignments to answer research questions about geography,
+#      institutional collaboration, and temporal trends.
+#
 # DATA
 # ----
 #   Africa_abstracts.csv                          — 3,328 abstracts (EID + Abstract)
 #   UU_scopus_country_clean_lonlat_continent.rdata — affiliation/location data
 #     (one row per affiliation per paper: EID, clean2 org name, main_country,
 #      Continent, Year, lon, lat, iso2)
+#
+# NOTE ON DATA STRUCTURE
+# ----------------------
+# A single paper can have multiple affiliations (e.g., co-authors from three
+# different universities in three countries).  This means the affiliation table
+# has MANY ROWS per paper.  When counting papers, we always use:
+#
+#   distinct(EID, <grouping variable>)  → then count()
+#
+# rather than just count(), to avoid double-counting a paper once for each
+# of its affiliations.
 #
 # OUTLINE
 # -------
@@ -54,7 +80,9 @@ library(htmlwidgets)
 library(dplyr)
 library(tidyr)
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── Helper: save a plotly figure as a self-contained HTML file ────────────────
+# We use saveWidget() from htmlwidgets.  selfcontained = TRUE embeds all
+# JavaScript inside the .html file so it opens without an internet connection.
 save_html <- function(p, path) {
   if (is.null(p)) return(invisible(NULL))
   dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
@@ -73,15 +101,23 @@ dir.create(OUT, showWarnings = FALSE)
 # =============================================================================
 message("\n=== Loading data ===")
 
+# The abstracts table is flat: one row per paper.
 abstracts <- read.csv("Africa_abstracts.csv", stringsAsFactors = FALSE)
+
+# The affiliation table has ONE ROW PER AFFILIATION PER PAPER.
+# A paper with 5 co-authors from 5 institutions produces 5 rows, all sharing
+# the same EID (Elsevier document identifier).
 load("UU_scopus_country_clean_lonlat_continent.rdata")
 affil <- UU_scopus_country_clean
 
-# Keep only rows matching our abstract set (should be all of them)
+# Restrict affiliations to the papers in our abstract set.
+# (The affiliation file may contain papers outside the Africa subset.)
 affil <- affil[affil$EID %in% abstracts$EID, ]
 
-# Paper-level metadata: take one row per paper and record year + a flag
-# for whether the paper has at least one African co-author.
+# Compute one summary row per paper:
+#   Year       — publication year
+#   has_africa — TRUE if ≥1 affiliation is in Africa (should always be TRUE here)
+#   n_africa   — how many African affiliations the paper has
 paper_meta <- affil |>
   group_by(EID) |>
   summarise(
@@ -98,9 +134,18 @@ message(sprintf("Abstracts: %d | Affiliation rows: %d | Papers with ≥1 African
 # =============================================================================
 # PART 1 — DESCRIPTIVE STATISTICS
 # =============================================================================
+# Before modeling, always explore the data.  This section asks:
+#   - Which countries produce the most Africa-affiliated research?
+#   - Which institutions are most prolific?
+#   - Has African publication output grown over time?
+#   - Which world regions do African researchers collaborate with most?
 message("\n=== Part 1: Descriptive statistics ===")
 
 # ── 1a. Top African countries by number of affiliated papers ─────────────────
+# WHY distinct(EID, main_country)?
+#   A paper with two South African universities would appear TWICE in the
+#   affiliation table for "South Africa".  distinct() keeps it once per
+#   (paper, country) pair so we count papers, not affiliation rows.
 af_country <- affil |>
   filter(Continent == "Africa") |>
   distinct(EID, main_country) |>          # one row per (paper, country)
@@ -119,9 +164,11 @@ p_country <- plot_ly(af_country |> arrange(n_papers),
 save_html(p_country, file.path(OUT, "01_country_bar.html"))
 
 # ── 1b. Top African organisations ────────────────────────────────────────────
+# clean2 = a standardised organisation name (raw Scopus names are inconsistent;
+# "Univ Cape Town", "University of Cape Town", "UCT" all map to the same clean2).
 af_org <- affil |>
   filter(Continent == "Africa", !is.na(clean2), nzchar(clean2)) |>
-  distinct(EID, clean2) |>
+  distinct(EID, clean2) |>     # again: one (paper, org) pair, not one row per affil
   count(clean2, name = "n_papers") |>
   arrange(desc(n_papers)) |>
   head(20)
@@ -137,8 +184,12 @@ p_org <- plot_ly(af_org |> arrange(n_papers),
 save_html(p_org, file.path(OUT, "02_org_bar.html"))
 
 # ── 1c. Publication trend by continent ───────────────────────────────────────
+# For each (year, continent) pair we count how many affiliation rows there are.
+# Note: this counts affiliated ORGANISATIONS per year, not papers, because a
+# paper with five European affiliations contributes 5 to Europe's count.
+# That is intentional — it captures the volume of international engagement.
 trend <- affil |>
-  distinct(EID, Continent, Year) |>
+  distinct(EID, Continent, Year) |>    # (paper, continent, year) triples
   count(Year, Continent, name = "n") |>
   filter(!is.na(Year))
 
@@ -165,8 +216,18 @@ p_trend <- layout(p_trend,
 save_html(p_trend, file.path(OUT, "03_publication_trend.html"))
 
 # ── 1d. African × world-region co-authorship heatmap ─────────────────────────
-# For each paper, count how many African countries co-occur with each
-# world region.
+# QUESTION: which world regions collaborate most with each African country?
+# METHOD:
+#   For each paper that has ≥1 African affiliation, count how many times each
+#   African country co-appears with each non-African continent.
+#   This is a cross-tabulation of (african_country, partner_continent) pairs.
+#
+# We use an inner_join to link:
+#   - Left side:  ALL affiliations (any continent) for papers with an African co-author
+#   - Right side: the AFRICAN affiliations for those same papers
+# After joining, each row represents one (African country, partner continent) link
+# for a single paper.  We then filter to partner_continent != "Africa" to get
+# only cross-continental links.
 af_eids <- unique(affil$EID[affil$Continent == "Africa"])
 
 colab <- affil |>
@@ -180,9 +241,9 @@ colab <- affil |>
   ) |>
   filter(Continent != "Africa") |>          # cross-continental links only
   count(africa_country, Continent, name = "n") |>
-  filter(n >= 5)                            # filter noise
+  filter(n >= 5)                            # drop very rare pairs (noise)
 
-# Keep top 15 African countries for readability
+# Keep only the top 15 African countries (by total paper count) for readability.
 top_af <- af_country$main_country[1:15]
 colab_mat <- colab |>
   filter(africa_country %in% top_af) |>
@@ -210,42 +271,78 @@ message("Part 1 done — 4 figures saved.")
 # =============================================================================
 # PART 2 — EMBED AND PARAMETER SWEEP
 # =============================================================================
+# WHAT IS EMBEDDING?
+# ------------------
+# A transformer encoder reads each abstract and produces a dense numeric
+# vector — typically 384 to 768 numbers — that captures the semantic meaning
+# of the text.  Abstracts about similar topics land close together in this
+# high-dimensional space; abstracts about different topics land far apart.
+# This is what makes topic modeling with BERTopic semantically coherent:
+# it clusters documents by meaning, not by shared vocabulary.
+#
+# WHY all-MiniLM-L6-v2?
+#   It is fast (6 transformer layers, 384 dimensions) and produces competitive
+#   embeddings for general English text.  For a corpus of scientific abstracts
+#   a domain-specific model (SPECTER2, SciBERT) would give higher topic
+#   coherence at the cost of slower inference.  MiniLM-L6 is a good starting
+#   point before investing in a heavier model.
 message("\n=== Part 2: Embedding + parameter sweep ===")
 
-# Load encoder — all-MiniLM-L6-v2 is a fast 384-D general-purpose model.
-# For African research corpora a scientific model (SPECTER2, SciBERT) would
-# give higher topic coherence; MiniLM is used here for speed.
 enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
 
 docs <- abstracts$Abstract
 
-# embed_texts_cached() runs the encoder on the first call and saves to disk.
-# Every subsequent call loads the cached .rds — no GPU or long wait needed.
+# embed_texts_cached() runs the encoder on the first call and saves the matrix
+# to disk as an .rds file.  Every subsequent call loads the cached version in
+# a fraction of a second without re-running the encoder.
+# WHY cache?  Embedding 3,328 abstracts takes ~2–5 minutes on a CPU.  If you
+# want to try different clustering settings, you do not want to re-embed every
+# time.  Caching decouples the slow encoding step from the fast modeling step.
 message("Embedding ", length(docs), " abstracts (cached after first run)...")
 emb <- embed_texts_cached(enc, docs,
                            cache_file = file.path(OUT, "embeddings_cache.rds"),
-                           normalize  = TRUE,
+                           normalize  = TRUE,   # L2-normalise so cosine = dot product
                            verbose    = TRUE)
 message(sprintf("Embedding matrix: %d × %d", nrow(emb), ncol(emb)))
 
 # ── Parameter sweep ──────────────────────────────────────────────────────────
-# sweep_topics() evaluates every combination of UMAP and HDBSCAN parameters.
-# We test:
-#   n_neighbors  — controls how local vs. global the UMAP manifold is.
-#                  Small values → fine-grained local clusters.
-#                  Large values → smoother, more global structure.
-#   n_components — dimensionality of the UMAP space fed to HDBSCAN.
-#                  Higher → richer but noisier representation.
-#   min_pts      — minimum cluster size in HDBSCAN.
-#                  Small → many small topics + low noise.
-#                  Large → few big topics + high noise.
+# Before fitting a single model it is good practice to evaluate multiple
+# combinations of hyperparameters.  sweep_topics() does this efficiently:
+# the encoder runs ONCE (embeddings are already computed), and only the cheap
+# UMAP + HDBSCAN steps are repeated for each combination.
 #
-# For each combination the sweep reports:
-#   silhouette   — how well-separated documents are from other topics (higher better)
-#   cohesion     — mean cosine similarity within topics (higher better)
-#   separation   — mean cosine between topic centroids (lower better = more distinct)
-#   jaccard      — vocabulary overlap between topics (lower better)
-#   noise %      — share of documents left unclustered (lower usually better)
+# The three parameters:
+#
+#   n_neighbors  (UMAP)
+#     Controls the local vs. global balance of the UMAP manifold.
+#     SMALL n_neighbors → UMAP attends to very local structure (tight, fine-grained
+#       clusters, but may miss larger-scale organisation).
+#     LARGE n_neighbors → UMAP attends to more global structure (broader, smoother
+#       manifold, topics may merge).
+#     Typical range: 10–50.
+#
+#   n_components (UMAP)
+#     The number of dimensions in the reduced space fed into HDBSCAN.
+#     More dimensions → richer representation but harder for HDBSCAN to find
+#     density peaks (curse of dimensionality).
+#     Less dimensions → faster, but may lose fine-grained topic separation.
+#     Typical range: 5–15.
+#
+#   min_pts (HDBSCAN)
+#     Minimum number of documents for a group to be considered a "cluster"
+#     rather than noise.  This is the most important tuning parameter.
+#     SMALL min_pts → many small topics; documents near the edge of clusters
+#       are still included; less noise.
+#     LARGE min_pts → fewer, larger topics; documents that don't fit
+#       a big group are labelled noise (-1).
+#     Typical range: 5–30 depending on corpus size.
+#
+# For each combination the sweep reports five quality metrics:
+#   silhouette — how well-separated topics are (higher = better)
+#   cohesion   — mean cosine similarity within topics (higher = better)
+#   separation — mean cosine distance between topic centroids (lower = more distinct)
+#   jaccard    — vocabulary overlap between topics (lower = more distinct)
+#   noise %    — share of documents left unassigned (lower is usually better)
 message("Running parameter sweep (this takes a few minutes)...")
 
 sw <- sweep_topics(
@@ -254,24 +351,28 @@ sw <- sweep_topics(
   n_neighbors  = c(10L, 20L, 30L),
   n_components = c(5L, 10L),
   min_pts      = c(10L, 20L, 30L),
-  ngram_range    = c(1L, 2L),
-  quality_top_n  = 10L,
-  quality_sample = 1000L,
+  ngram_range    = c(1L, 2L),    # use both unigrams and bigrams in topic terms
+  quality_top_n  = 10L,          # evaluate using the top 10 terms per topic
+  quality_sample = 1000L,        # silhouette computed on a sample for speed
   seed    = 42L,
   verbose = TRUE
 )
 
-# Print the sweep summary table
+# Print the sweep summary table: one row per parameter combination.
 print(sw)
 
-# visualize_sweep() produces an interactive heatmap:
-# - rows  = parameter combinations
-# - cols  = quality metrics (all normalised 0–1 within column, green = best)
-# - star  = combination with the highest silhouette score (sw$best)
+# visualize_sweep() produces an interactive heatmap where:
+#   rows  = parameter combinations (18 in total)
+#   cols  = quality metrics (all normalised 0–1 within column, green = best)
+#   star  = the combination with the highest silhouette score (sw$best)
+# WHAT TO LOOK FOR: rows that are consistently green across all columns.
+# A combination that scores well on silhouette but poorly on noise% may be
+# producing many small tight clusters at the expense of leaving half the corpus
+# unassigned — that may or may not be what you want.
 p_sweep <- visualize_sweep(sw)
 save_html(p_sweep, file.path(OUT, "05_sweep.html"))
 
-# Inspect the best combination
+# sw$best = the parameter combination with the highest silhouette score.
 best <- sw$best
 message(sprintf(
   "Best parameters: n_neighbors=%d  n_components=%d  min_pts=%d  silhouette=%.3f",
@@ -285,19 +386,37 @@ message("Part 2 done — parameter sweep complete.")
 # =============================================================================
 # PART 3 — FIT THE TOPIC MODEL
 # =============================================================================
+# Now that we have good hyperparameters, we fit the full model.
+#
+# fit_bertopic() runs the complete four-stage pipeline:
+#   1. (Skip — embeddings already computed and passed in via `embeddings`)
+#   2. UMAP: reduce the 384-D embeddings to n_components dimensions.
+#      A separate 2-D projection is always computed for visualisation.
+#   3. HDBSCAN: find clusters in the reduced space.
+#   4. c-TF-IDF: for each cluster, compute which terms are most characteristic
+#      relative to the rest of the corpus.
+#
+# EXTRA STOPWORDS
+# ---------------
+# Generic academic phrases like "study", "results", "analysis" are so common
+# across all topics that they score highly on TF (term frequency) but carry no
+# discriminative information.  Adding them to extra_stopwords removes them from
+# the c-TF-IDF vocabulary so the topic terms focus on content words.
+#
+# REDUCE_FREQUENT_WORDS = TRUE
+# ----------------------------
+# Even after stopword removal, some terms may completely dominate a single topic.
+# This option applies a square-root dampening to the class TF before multiplying
+# by IDF, which compresses very high frequencies and gives more balanced term lists.
 message("\n=== Part 3: Fitting the topic model ===")
 
-# Use the best parameters identified by the sweep.
-# We also add bigrams (ngram_range = c(1,2)) to capture compound terms such as
-# "south africa", "climate change", "public health" etc., and apply
-# reduce_frequent_words to dampen terms that dominate a single topic.
 fit <- fit_bertopic(
   docs                  = docs,
   embeddings            = emb,
   umap_n_neighbors      = best$n_neighbors,
   umap_n_components     = best$n_components,
   hdbscan_min_pts       = best$min_pts,
-  ngram_range           = c(1L, 2L),
+  ngram_range           = c(1L, 2L),   # include bigrams like "south africa", "climate change"
   top_n_terms           = 10L,
   reduce_frequent_words = TRUE,
   extra_stopwords       = c("study", "paper", "result", "results",
@@ -309,10 +428,42 @@ fit <- fit_bertopic(
   seed = 42L
 )
 
+# print() shows the number of topics found, the noise count, and the top terms.
 print(fit)
+# print_topics() shows a compact table: topic ID, size, top terms.
 print_topics(fit)
 
-# ── Topic quality ─────────────────────────────────────────────────────────────
+# ── Label topics with Ollama BEFORE saving any visualisations ────────────────
+# All visualisations (scatter, barchart, quality, map, …) pull labels from
+# fit$topic_labels.  We run the LLM labeling here — before saving anything —
+# so every output file shows human-readable names instead of c-TF-IDF slugs.
+#
+# label_topics_llm() sends each topic's top terms + 3 representative abstracts
+# to a local LLM and asks for a concise 3–5-word description.  The LLM label
+# replaces the auto-generated slug inside fit$topic_labels.
+#
+# Requirements (one-time setup):
+#   1. Install Ollama from https://ollama.com
+#   2. In a terminal: ollama serve
+#   3. In a terminal: ollama pull llama3.2  (downloads ~2 GB)
+#
+# If Ollama is unavailable, comment out the two lines below — the rest of the
+# script falls back to the automatic c-TF-IDF slugs.
+message("Labeling topics with Ollama llama3.2 (ensure `ollama serve` is running)...")
+fit <- label_topics_llm(fit, provider = "ollama", model = "llama3.2",
+                        top_n_terms = 10L, n_representative_docs = 3L)
+
+# Inspect the human-readable labels before producing any output.
+topic_info <- get_topic_info(fit)
+print(topic_info[, c("Topic", "Count", "Name")])
+
+# ── Topic quality assessment ──────────────────────────────────────────────────
+# topic_quality() computes four metrics for the fitted model:
+#   cohesion    — how tightly each topic's documents cluster around their centroid
+#   separation  — how distinct topics are from one another
+#   overlap     — vocabulary overlap between topics (Jaccard similarity of term sets)
+#   distribution — balance of topic sizes (entropy, coefficient of variation)
+# A silhouette score in the full embedding space is also reported.
 q <- topic_quality(fit, top_n = 10L)
 print(q)
 
@@ -320,53 +471,55 @@ p_quality <- visualize_quality(q, fit)
 save_html(p_quality, file.path(OUT, "08_topic_quality.html"))
 
 # ── UMAP document scatter (coloured by topic) ─────────────────────────────────
+# visualize_topics() uses the 2-D UMAP layout (always computed by fit_bertopic,
+# regardless of the clustering dimensionality).  Each point is one abstract.
+# Colour = topic assignment.  Grey points = noise (topic -1).
+# WHAT TO LOOK FOR:
+#   - Tight, well-separated clouds of the same colour → coherent topics.
+#   - Overlapping clouds → topics that may need to be merged.
+#   - Many grey points → either min_pts is too large, or those abstracts
+#     are genuinely too diverse to cluster.
 p_scatter <- visualize_topics(fit)
 save_html(p_scatter, file.path(OUT, "06_topics_scatter.html"))
 
 # ── c-TF-IDF bar charts ───────────────────────────────────────────────────────
+# visualize_barchart() shows the top 8 terms per topic and their c-TF-IDF score.
+# A high c-TF-IDF means the term appears frequently in this topic but rarely
+# across the rest of the corpus — it is characteristic, not just common.
 p_bars <- visualize_barchart(fit, top_n = 8L)
 save_html(p_bars, file.path(OUT, "07_topics_barchart.html"))
 
-message("Part 3 done — topic model fitted.")
+message("Part 3 done — topic model fitted and labeled.")
 
 # =============================================================================
 # PART 4 — ANALYSIS THROUGH TOPIC LENS
 # =============================================================================
+# The topic assignments let us ask research questions that go beyond "what is
+# this corpus about?" to "who researches what, where, and how is that changing?"
 message("\n=== Part 4: Analysis through topic lens ===")
 
-# ── 4a. Label topics with Ollama ─────────────────────────────────────────────
-# label_topics_llm() sends each topic's top terms + 3 representative abstracts
-# to a local Ollama model and replaces the auto-generated slug labels with
-# a concise 3–5-word human description.
-#
-# Prerequisites:
-#   1. Run `ollama serve` in a terminal (or start the Ollama desktop app).
-#   2. Run `ollama pull llama3.2` once to download the model (~2 GB).
-#
-# If Ollama is not available, comment out the next two lines — the rest of
-# the analysis uses the automatic c-TF-IDF slugs.
-message("Labeling topics with Ollama llama3.2 (ensure `ollama serve` is running)...")
-fit <- label_topics_llm(fit, provider = "ollama", model = "llama3.2",
-                        top_n_terms = 10L, n_representative_docs = 3L)
+# topic_info was already printed above; re-fetch for use in the rest of Part 4.
 
-# Show the labels
-topic_info <- get_topic_info(fit)
-print(topic_info[, c("Topic", "Count", "Name")])
-
-# ── 4b. Attach topic assignments to the paper-level affiliation data ──────────
-# fit_bertopic() assigns each document in docs[] to a topic.
-# We join those assignments back to the affiliation table using the original
-# document order (EIDs are in the same order as docs[]).
+# ── 4b. Attach topic assignments to the affiliation table ─────────────────────
+# fit$clusters is a vector of length = number of documents (nrow(abstracts)).
+# Position i corresponds to abstracts$Abstract[i] (the same document order we
+# passed to fit_bertopic).  Topic -1 means HDBSCAN labelled the document as noise.
 paper_topics <- data.frame(
   EID   = abstracts$EID,
   topic = fit$clusters,           # -1 = noise; 0, 1, 2, … = topic IDs
   stringsAsFactors = FALSE
 )
 
-# Human-readable topic label, formatted (no underscores, truncated to 30 chars)
+# Helper: format a raw topic label for display.
+# LLM labels look like "5_Sustainable Agriculture and Food Security".
+# Auto-generated labels look like "5_agriculture_soil_crop".
+# In both cases we:
+#   1. Strip the numeric ID prefix (e.g. "5_")
+#   2. Replace underscores with spaces (for auto-generated labels)
+#   3. Truncate to 30 characters to keep axis labels readable
 .fmt <- function(raw) {
-  text <- sub("^-?[0-9]+_", "", raw)   # strip numeric id prefix
-  text <- gsub("_", " ", text)          # underscores -> spaces (auto labels)
+  text <- sub("^-?[0-9]+_", "", raw)   # strip "5_" or "-1_"
+  text <- gsub("_", " ", text)          # "agriculture_soil" → "agriculture soil"
   text <- trimws(text)
   if (nchar(text) > 30L) paste0(substr(text, 1L, 29L), "…") else text
 }
@@ -377,19 +530,25 @@ paper_topics$topic_label <- vapply(paper_topics$topic, function(t) {
   if (is.null(lbl) || !nzchar(lbl)) paste0("Topic ", t) else .fmt(lbl)
 }, character(1))
 
-# Merge: affiliation table gets a topic column (all rows for a paper share one topic)
+# Join topic assignments back to the affiliation table.
+# After this join, every affiliation row has a "topic" column indicating
+# which topic the paper it belongs to was assigned to.
 affil_topics <- affil |>
   left_join(paper_topics, by = "EID")
 
-# ── 4b2. 2-D topic map ────────────────────────────────────────────────────────
-# One bubble per topic, positioned at its centroid in the UMAP document space.
-# Bubble size = number of documents in the topic (log-scaled for readability).
-# Top terms are shown in the hover tooltip.
+# ── 4b2. 2-D topic bubble map ────────────────────────────────────────────────
+# Instead of showing individual documents, this chart shows ONE BUBBLE PER TOPIC.
+# Position = centroid of the topic's documents in the 2-D UMAP layout.
+# Size     = number of documents in the topic (log-scaled for readability).
+# Hover    = top c-TF-IDF terms.
+# This gives a compact overview of where topics sit relative to each other
+# in the semantic space, and which topics are large vs. niche.
 topics_nonnoise <- sort(setdiff(unique(fit$clusters), -1L))
-coords2d        <- fit$layout2d
+coords2d        <- fit$layout2d   # n × 2 matrix of 2-D UMAP coordinates
 
 topic_map_df <- data.frame(
   topic = topics_nonnoise,
+  # Centroid = average of the 2-D coordinates of all documents in the topic.
   x     = vapply(topics_nonnoise,
                  function(t) mean(coords2d[fit$clusters == t, 1L]), numeric(1L)),
   y     = vapply(topics_nonnoise,
@@ -403,7 +562,7 @@ topic_map_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Top terms per topic for hover text
+# Add the top 8 terms per topic for hover text.
 topic_map_df$top_terms <- vapply(topics_nonnoise, function(t) {
   tt <- fit$topic_terms[fit$topic_terms$topic == t, ]
   tt <- tt[order(tt$rank), ]
@@ -423,7 +582,7 @@ p_topic_map <- plot_ly(
   x    = ~x, y = ~y,
   type = "scatter", mode = "markers+text",
   marker = list(
-    size    = ~sqrt(n) * 3,
+    size    = ~sqrt(n) * 3,   # sqrt-scaling prevents very large topics from dominating
     color   = pal_tm,
     opacity = 0.85,
     line    = list(color = "white", width = 1.5)
@@ -445,7 +604,13 @@ p_topic_map <- plot_ly(
 save_html(p_topic_map, file.path(OUT, "06b_topic_map_2d.html"))
 
 # ── 4c. World map coloured by dominant topic per country ─────────────────────
-# For each country, find its modal (most common) topic across all its papers.
+# QUESTION: Is research about certain topics concentrated in certain countries?
+# METHOD: For each country, find the modal topic (the topic that appears most
+# often across its affiliated papers).  Colour the country on the world map by
+# that dominant topic.
+#
+# slice_max() keeps the single row with the largest n per country (the most
+# common topic).  with_ties = FALSE breaks ties by taking the first row.
 country_topic <- affil_topics |>
   filter(topic != -1L, !is.na(main_country)) |>
   count(main_country, topic, topic_label, name = "n") |>
@@ -461,7 +626,6 @@ country_topic <- affil_topics |>
     by = "main_country"
   )
 
-# Unique topics and a colour palette
 all_labels <- sort(unique(country_topic$topic_label))
 pal <- setNames(
   colorRampPalette(c("#e41a1c","#377eb8","#4daf4a","#ff7f00",
@@ -493,13 +657,20 @@ p_map <- layout(p_map,
                 legend = list(title = list(text = "Topic")))
 save_html(p_map, file.path(OUT, "09_topic_map_country.html"))
 
-# ── 4d. Countries per topic (stacked bar — share of each continent) ──────────
+# ── 4d. Continent share per topic (stacked bar) ───────────────────────────────
+# QUESTION: Are some topics more internationally collaborative than others?
+# Are some topics primarily driven by African institutions or by a specific
+# world region?
+#
+# For each (topic, continent) pair we count how many DISTINCT (paper, continent)
+# combinations exist, then express it as a percentage within the topic.
+# This normalises for topic size so we can compare topic "flavours" fairly.
 cont_topic <- affil_topics |>
   filter(topic != -1L) |>
   distinct(EID, Continent, topic, topic_label) |>
   count(topic_label, Continent, name = "n") |>
   group_by(topic_label) |>
-  mutate(pct = n / sum(n) * 100) |>
+  mutate(pct = n / sum(n) * 100) |>    # convert to percentage within topic
   ungroup()
 
 cont_order <- topic_info$Name[topic_info$Topic != -1L]
@@ -525,14 +696,16 @@ p_cont <- layout(p_cont,
 save_html(p_cont, file.path(OUT, "10_countries_per_topic.html"))
 
 # ── 4e. Top African organisations per topic ───────────────────────────────────
-# For each topic, rank African organisations by number of papers in that topic.
+# QUESTION: Which African universities and research institutes lead each topic?
+# This helps identify institutional specialisation and potential collaboration
+# partners for specific research areas.
 af_org_topic <- affil_topics |>
   filter(topic != -1L, Continent == "Africa",
          !is.na(clean2), nzchar(clean2)) |>
-  distinct(EID, clean2, topic_label) |>
+  distinct(EID, clean2, topic_label) |>    # one (paper, org, topic) triple
   count(topic_label, clean2, name = "n") |>
   group_by(topic_label) |>
-  slice_max(order_by = n, n = 5L, with_ties = FALSE) |>   # top 5 per topic
+  slice_max(order_by = n, n = 5L, with_ties = FALSE) |>   # top 5 orgs per topic
   ungroup()
 
 p_orgs <- plot_ly(af_org_topic,
@@ -549,8 +722,20 @@ p_orgs <- plot_ly(af_org_topic,
 save_html(p_orgs, file.path(OUT, "11_orgs_per_topic.html"))
 
 # ── 4f. Topic prevalence over time ────────────────────────────────────────────
-# topics_over_time() uses the fitted topic assignments to compute how each
-# topic's share of publications changes across the 2015–2024 window.
+# QUESTION: How has the share of each topic changed from 2015 to 2024?
+# Is any topic growing rapidly? Has any topic declined?
+#
+# topics_over_time() takes the fitted topic assignments and a timestamp per
+# document.  It bins the timestamps (here: by year, 10 bins for 10 years) and
+# for each (topic, year) combination computes the share of that year's documents
+# assigned to that topic.
+#
+# evolution_tuning = TRUE smooths the term representation by averaging with the
+# previous time period's representation (stabilises sparse time bins).
+# global_tuning    = TRUE blends with the global topic representation.
+#
+# NOTE: timestamps must be aligned with docs[].  We left_join paper_meta
+# (which has one row per EID) to get the Year for each document.
 timestamps <- paper_topics |>
   left_join(paper_meta[, c("EID", "Year")], by = "EID") |>
   pull(Year)
@@ -560,14 +745,23 @@ tot <- topics_over_time(fit, timestamps = timestamps, nr_bins = 10L,
 p_tot <- visualize_topics_over_time(tot, normalize = TRUE)
 save_html(p_tot, file.path(OUT, "12_topic_over_time.html"))
 
-# ── 4g. Topic × continent diverging heatmap (compare_topics) ─────────────────
-# compare_topics() tests whether each topic is over- or under-represented in
-# each group (here: continent of affiliation).  The chi-squared contribution
-# captures both direction (positive = over-represented) and magnitude.
+# ── 4g. Topic × continent diverging heatmap ───────────────────────────────────
+# QUESTION: Which continents are over- or under-represented in each topic,
+# relative to what we would expect if topics were distributed uniformly?
 #
-# compare_topics() requires a full-length groups vector (one entry per document).
-# For each paper we take the modal continent across its affiliated organisations.
-# Papers with no affiliation data are labelled "Unknown".
+# compare_topics() tests for statistical over/under-representation using a
+# signed chi-squared contribution:
+#
+#   chi2_contribution(topic, group) = sign(O - E) × sqrt((O - E)² / E)
+#
+# where O = observed count and E = expected count under independence.
+# Positive values = over-represented; negative values = under-represented.
+# visualize_comparison() renders this as a blue/white/red diverging heatmap.
+#
+# IMPORTANT: compare_topics() needs a full-length groups vector — one entry
+# per document in the same order as docs[].  We use the modal continent per
+# paper (the continent that appears most often among the paper's affiliations).
+# Papers with no affiliation data get the label "Unknown".
 paper_continent <- affil |>
   count(EID, Continent) |>
   group_by(EID) |>
@@ -575,7 +769,8 @@ paper_continent <- affil |>
   ungroup() |>
   select(EID, Continent)
 
-# Full-length vector aligned with docs[] / fit$clusters
+# Build the full-length groups vector.  left_join ensures we get one row per
+# document (in the same order as abstracts$EID = docs[]).
 paper_groups <- paper_topics |>
   left_join(paper_continent, by = "EID") |>
   mutate(Continent = ifelse(is.na(Continent), "Unknown", Continent)) |>
@@ -584,8 +779,8 @@ paper_groups <- paper_topics |>
 comp <- compare_topics(
   fit    = fit,
   groups = paper_groups,
-  method = "chi2",
-  min_count = 5L
+  method = "chi2",    # signed chi-squared contribution
+  min_count = 5L      # ignore (topic, continent) cells with fewer than 5 papers
 )
 p_comp <- visualize_comparison(comp)
 save_html(p_comp, file.path(OUT, "13_topic_comparison.html"))

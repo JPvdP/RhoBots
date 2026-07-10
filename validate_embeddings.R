@@ -98,7 +98,8 @@ MODELS <- list(
   "MPNet-base"    = list(repo = "sentence-transformers/all-mpnet-base-v2",         prefix = ""),
   "BGE-base"      = list(repo = "BAAI/bge-base-en-v1.5",
                           prefix = "Represent this sentence: "),
-  "E5-base"       = list(repo = "intfloat/e5-base-v2", prefix = "passage: ")
+  "E5-base"       = list(repo = "intfloat/e5-base-v2", prefix = "passage: "),
+  "Scibert_DAFS"  = list(repo = "NetworkIsLife/SciBert_Cased_DAFS", prefix = "")
 )
 
 # =============================================================================

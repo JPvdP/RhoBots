@@ -55,8 +55,7 @@ compare_topics <- function(fit, groups,
     stop("'groups' must have the same length as the corpus (", length(fit$docs),
          " documents).")
 
-  topics_nn    <- sort(setdiff(unique(fit$clusters), -1L))
-  group_levels <- sort(unique(groups))
+  topics_nn <- sort(setdiff(unique(fit$clusters), -1L))
 
   nonnoise <- fit$clusters != -1L
   cl_nn    <- fit$clusters[nonnoise]
@@ -64,6 +63,12 @@ compare_topics <- function(fit, groups,
 
   tab      <- table(Topic = cl_nn, Group = grp_nn)
   expected <- outer(rowSums(tab), colSums(tab)) / sum(tab)
+
+  # Derive group_levels from the contingency table, not from the full groups
+  # vector.  Groups that appear only in noise documents are absent from tab;
+  # indexing tab with those group names causes "subscript out of bounds".
+  group_levels <- colnames(tab)
+  topics_nn    <- as.integer(rownames(tab))   # restrict to topics in the table
 
   if (verbose) {
     cat("Contingency table (topics × groups, non-noise docs only):\n")
@@ -165,16 +170,22 @@ print.compare_topics_result <- function(x, top_n = 10L, ...) {
 #' \code{\link{compare_topics}} as a diverging colour heatmap: blue = over-
 #' represented in that group, red = under-represented.
 #'
+#' Topics are placed on the x-axis (with angled labels) and groups on the
+#' y-axis, which keeps the chart readable even when topic labels are long.
+#'
 #' @param comp A \code{compare_topics_result} from \code{\link{compare_topics}}.
 #' @param top_n_topics Restrict to the \code{top_n_topics} topics with the
 #'   largest mean absolute statistic.  \code{NULL} (default) shows all topics.
-#' @param width,height Plot dimensions in pixels (default 800 × 550).
+#' @param max_label_chars Maximum characters for topic labels before truncation
+#'   with an ellipsis (default 25).
+#' @param width,height Plot dimensions in pixels (default 1000 × 420).
 #' @return A \code{plotly} figure.
 #' @export
 visualize_comparison <- function(comp,
-                                  top_n_topics = NULL,
-                                  width  = 800L,
-                                  height = 550L) {
+                                  top_n_topics   = NULL,
+                                  max_label_chars = 25L,
+                                  width  = 1000L,
+                                  height = 420L) {
   if (!requireNamespace("plotly", quietly = TRUE))
     stop("Package 'plotly' is required. Install with install.packages(\"plotly\").")
 
@@ -190,10 +201,19 @@ visualize_comparison <- function(comp,
   topics_ord <- sort(unique(df$Topic))
   groups_ord <- sort(unique(df$Group))
 
-  row_labels <- vapply(as.character(topics_ord), function(t)
-    df$Name[match(as.integer(t), df$Topic)][1L] %||% t,
-    character(1L))
+  # Short display labels: strip numeric prefix, replace underscores, truncate.
+  topic_labels <- vapply(as.character(topics_ord), function(t) {
+    raw <- df$Name[match(as.integer(t), df$Topic)][1L] %||% t
+    txt <- sub("^-?[0-9]+_", "", raw)
+    txt <- gsub("_", " ", txt)
+    txt <- trimws(txt)
+    if (nchar(txt) > max_label_chars)
+      paste0(substr(txt, 1L, max_label_chars - 1L), "…")
+    else
+      txt
+  }, character(1L))
 
+  # Build a topics × groups matrix of statistics (NA = cell below min_count).
   z_mat   <- matrix(NA_real_, length(topics_ord), length(groups_ord),
                     dimnames = list(as.character(topics_ord), groups_ord))
   txt_mat <- z_mat
@@ -203,32 +223,39 @@ visualize_comparison <- function(comp,
     txt_mat[r, g] <- sprintf("%.2f\n(n=%d)", df$Stat[i], df$Observed[i])
   }
 
+  # Topics on x-axis, groups on y-axis.
+  # Transpose z so rows = groups, columns = topics.
+  z_t   <- t(z_mat)
+  txt_t <- t(txt_mat)
+
   abs_max <- max(abs(z_mat), na.rm = TRUE)
 
-  stat_label <- if (comp$method == "chi2")
-    "Signed χ²" else "log₂ ratio"
-  title_str  <- sprintf("%s by topic × group", stat_label)
+  stat_label <- if (comp$method == "chi2") "Signed χ²" else "log₂ ratio"
+  title_str  <- sprintf("%s by group × topic", stat_label)
 
   plotly::plot_ly(width = width, height = height) |>
     plotly::add_heatmap(
-      x = groups_ord,
-      y = row_labels,
-      z = z_mat,
+      x = topic_labels,        # topics on x-axis
+      y = groups_ord,           # groups on y-axis (typically short: continent names)
+      z = z_t,
       zmin = -abs_max, zmid = 0, zmax = abs_max,
       colorscale = list(
         c(0,   "#d73027"),
         c(0.5, "#f7f7f7"),
         c(1,   "#2166ac")
       ),
-      text         = txt_mat,
+      text         = txt_t,
       texttemplate = "%{text}",
-      textfont     = list(size = 11L),
+      textfont     = list(size = 10L),
       showscale    = TRUE,
-      colorbar     = list(title = stat_label)
+      colorbar     = list(title = stat_label, len = 0.8)
     ) |>
     plotly::layout(
-      title = list(text = title_str),
-      xaxis = list(title = "Group"),
-      yaxis = list(title = "", autorange = "reversed")
+      title  = list(text = title_str, x = 0),
+      xaxis  = list(title = "", tickangle = -40L,
+                    tickfont = list(size = 11L)),
+      yaxis  = list(title = "", autorange = "reversed",
+                    tickfont = list(size = 12L)),
+      margin = list(b = 130L, l = 110L, r = 80L, t = 50L)
     )
 }

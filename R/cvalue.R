@@ -86,6 +86,11 @@ cvalue_terms <- function(docs,
                       stringsAsFactors = FALSE)
 
   # --- Step 1: tokenise -------------------------------------------------------
+  # Lowercase, strip punctuation and special characters (keeping letters,
+  # digits, and spaces), split on whitespace, and drop tokens shorter than
+  # 2 characters or in the stopword list.
+  # WHY lowercase + strip?  We want "Sea Level Rise" and "sea level rise" to
+  # count as the same term.  Punctuation would fragment compound words.
   tokens <- lapply(docs, function(d) {
     t <- tolower(gsub("[^a-z0-9 ]+", " ", d))
     t <- strsplit(trimws(t), "\\s+", perl = TRUE)[[1L]]
@@ -93,11 +98,18 @@ cvalue_terms <- function(docs,
   })
 
   # --- Step 2: count n-grams for n in 2:max_n ---------------------------------
+  # For each n (bigrams, trigrams, …, max_n-grams), slide a window of width n
+  # across each document's token sequence and collect the resulting strings.
+  # Tokens within an n-gram are joined with "_" as a separator (e.g. "sea_level").
+  # After collecting all occurrences across the corpus, table() counts them and
+  # we discard n-grams that appear fewer than min_freq times — they are too
+  # rare to be reliable terminology.
   counts_by_n <- vector("list", max_n - 1L)
   for (n in 2L:max_n) {
     ng_raw <- unlist(lapply(tokens, function(toks) {
       len <- length(toks)
       if (len < n) return(character(0L))
+      # Sliding window: for position j, grab tokens[j .. j+n-1].
       vapply(seq_len(len - n + 1L),
              function(j) paste(toks[j:(j + n - 1L)], collapse = "_"),
              character(1L))
@@ -123,17 +135,36 @@ cvalue_terms <- function(docs,
   rownames(ngrams_df) <- NULL
 
   # --- Step 3: build containment index ----------------------------------------
-  # For every ngram of length n >= 3, locate all its shorter sub-sequences
-  # (length >= 2) and record the longer ngram's frequency against each.
-  containment <- list()  # term -> numeric vector of containing-term frequencies
+  # This is the key data structure for C-value.
+  #
+  # The C-value formula penalises a candidate term t if it frequently appears
+  # as a PART OF a longer term.  Example:
+  #   "sea level"       appears 80 times in the corpus
+  #   "sea level rise"  appears 60 of those times
+  # Without the penalty, "sea level" scores as very frequent (80).  But most
+  # of those occurrences are really about "sea level rise" — the bigram is not
+  # independently informative.  The penalty reduces the effective frequency of
+  # "sea level" by the mean frequency of the longer terms that contain it:
+  #   C-value("sea level") = log2(2) × (80 − 60) = 1 × 20 = 20.
+  #
+  # The containment index is a list:
+  #   key   = a candidate term t (string, "_"-joined)
+  #   value = numeric vector of corpus frequencies of every longer term
+  #           that contains t as a contiguous sub-sequence.
+  #
+  # We only process n-grams with n >= 3, because bigrams (n=2) have no
+  # shorter sub-sequences of length >= 2 to penalise.
+  containment <- list()  # term → frequencies of longer containing terms
 
   for (i in seq_len(nrow(ngrams_df))) {
     n <- ngrams_df$n_words[i]
-    if (n < 3L) next   # bigrams cannot contain shorter tracked terms
+    if (n < 3L) next   # bigrams cannot contain shorter tracked sub-sequences
 
-    words <- strsplit(ngrams_df$term[i], "_", fixed = TRUE)[[1L]]
+    words  <- strsplit(ngrams_df$term[i], "_", fixed = TRUE)[[1L]]
     f_long <- ngrams_df$freq[i]
 
+    # Enumerate all contiguous sub-sequences of length 2 to (n-1).
+    # For each, append f_long to that sub-sequence's entry in containment[].
     for (sub_len in 2L:(n - 1L)) {
       for (start in seq_len(n - sub_len + 1L)) {
         sub <- paste(words[start:(start + sub_len - 1L)], collapse = "_")
@@ -143,11 +174,27 @@ cvalue_terms <- function(docs,
   }
 
   # --- Step 4: compute C-value ------------------------------------------------
+  # C-value(t) = log2(|t|) × adjusted_frequency(t)
+  #
+  #   adjusted_frequency(t) =
+  #     f(t)                      if t is NOT nested inside any longer term
+  #     f(t) − mean(f(b) for b ∈ P(t))   otherwise
+  #
+  # where |t| = number of words, f(t) = corpus frequency, P(t) = the set of
+  # longer candidate terms that contain t as a sub-sequence.
+  #
+  # The log2(|t|) factor rewards longer terms: a 4-word term that survives
+  # the penalty scores twice as high as an equally frequent 2-word term.
+  # This reflects the intuition that longer specific compound terms carry more
+  # information than shorter generic ones.
+  #
+  # In code: containment[[t]] is NULL when t has no longer parent terms (the
+  # "not nested" case), so is.null(cf) → use raw frequency.
   cvalue_vec <- vapply(seq_len(nrow(ngrams_df)), function(i) {
-    t <- ngrams_df$term[i]
-    n <- ngrams_df$n_words[i]
-    f <- ngrams_df$freq[i]
-    cf <- containment[[t]]
+    t  <- ngrams_df$term[i]
+    n  <- ngrams_df$n_words[i]
+    f  <- ngrams_df$freq[i]
+    cf <- containment[[t]]    # frequencies of all longer terms that contain t
     if (is.null(cf)) log2(n) * f else log2(n) * (f - mean(cf))
   }, numeric(1L))
 

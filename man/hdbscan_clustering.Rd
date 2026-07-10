@@ -7,15 +7,21 @@
 hdbscan_clustering(min_pts = 10L, method = c("eom", "leaf"))
 }
 \arguments{
-\item{min_pts}{Minimum cluster size / neighbourhood size (default 10).}
+\item{min_pts}{Minimum cluster size and core-distance order (default 10).}
 
-\item{method}{\code{"eom"} (default) or \code{"leaf"}.}
+\item{method}{\code{"eom"} (excess of mass, default) or \code{"leaf"}.
+The leaf method uses \code{dbscan::hdbscan()} on small corpora only.}
 }
 \value{
 An \code{hdbscan_clustering} model object.
 }
 \description{
-Wraps \code{dbscan::hdbscan} (EOM method) or the leaf-selection variant
-from \code{.hdbscan_leaf()}.  This is the default clustering model used by
-\code{\link{fit_bertopic}}.
+HDBSCAN density clustering
+}
+\details{
+Default clustering model for \code{\link{fit_bertopic}}.  Uses a Borůvka
+minimum spanning tree on the mutual-reachability kNN graph (Rcpp) instead
+of the naive Prim's algorithm in \code{dbscan::hdbscan()}, which avoids the
+O(n²) memory cost that causes OOM at ~30K+ documents.  Memory is O(n × k)
+throughout, making it practical at 100K+ documents.
 }
