@@ -19,7 +19,10 @@ Imports:
     dbscan,
     Matrix,
     stats,
-    wordpiece
+    wordpiece,
+    Rcpp
+LinkingTo:
+    Rcpp
 Suggests:
     testthat (>= 3.0.0),
     plotly,

@@ -50,6 +50,11 @@ rsconnect/
 # macOS
 .DS_Store
 
+# Compiled R package artifacts
+src/*.o
+src/*.so
+src/*.dll
+
 # Data files (not for version control)
 *.csv
 *.rdata

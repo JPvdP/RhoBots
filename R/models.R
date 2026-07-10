@@ -175,104 +175,60 @@ dim_project.no_reduction <- function(model, X) X
 
 #' HDBSCAN clustering
 #'
-#' Wraps \code{dbscan::hdbscan} (EOM method) or the leaf-selection variant
-#' from \code{.hdbscan_leaf()}.  This is the default clustering model used by
-#' \code{\link{fit_bertopic}}.
+#' HDBSCAN density clustering
 #'
-#' For large corpora (\code{n > sample_size}) the function automatically uses
-#' an approximate strategy: HDBSCAN is run on a random sample of
-#' \code{sample_size} documents, and every remaining document is assigned to
-#' the nearest sample cluster centroid.  Noise points from the sample (\code{-1})
-#' are kept as a centroid class only if no better option exists.  Set
-#' \code{sample_size = Inf} to always run exact HDBSCAN (may OOM for n > ~30K).
+#' Default clustering model for \code{\link{fit_bertopic}}.  Uses a Borůvka
+#' minimum spanning tree on the mutual-reachability kNN graph (Rcpp) instead
+#' of the naive Prim's algorithm in \code{dbscan::hdbscan()}, which avoids the
+#' O(n²) memory cost that causes OOM at ~30K+ documents.  Memory is O(n × k)
+#' throughout, making it practical at 100K+ documents.
 #'
-#' @param min_pts Minimum cluster size / neighbourhood size (default 10).
-#' @param method \code{"eom"} (default) or \code{"leaf"}.
-#' @param sample_size Maximum number of documents passed to exact HDBSCAN.
-#'   When \code{nrow(X) > sample_size}, approximate mode is used (default 25000).
+#' @param min_pts Minimum cluster size and core-distance order (default 10).
+#' @param method \code{"eom"} (excess of mass, default) or \code{"leaf"}.
+#'   The leaf method uses \code{dbscan::hdbscan()} on small corpora only.
 #' @return An \code{hdbscan_clustering} model object.
 #' @export
-hdbscan_clustering <- function(min_pts   = 10L,
-                                method    = c("eom", "leaf"),
-                                sample_size = 25000L) {
+hdbscan_clustering <- function(min_pts = 10L, method = c("eom", "leaf")) {
   method <- match.arg(method)
   structure(
-    list(min_pts = as.integer(min_pts), method = method,
-         sample_size = sample_size, fitted = NULL),
+    list(min_pts = as.integer(min_pts), method = method, fitted = NULL),
     class = c("hdbscan_clustering", "cluster_model")
   )
 }
 
 #' @export
 cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
-  n <- nrow(X)
+  min_pts <- model$min_pts
 
-  if (n <= model$sample_size) {
-    # ── Exact HDBSCAN ──────────────────────────────────────────────────────────
-    clust <- if (model$method == "leaf") {
-      .hdbscan_leaf(X, min_pts = model$min_pts)
-    } else {
-      dbscan::hdbscan(X, minPts = model$min_pts)
-    }
+  if (model$method == "leaf") {
+    # Leaf method uses the existing dbscan-based helper (small corpora only)
+    clust             <- .hdbscan_leaf(X, min_pts = min_pts)
     labels            <- clust$cluster
     labels[labels == 0L] <- -1L
     model$fitted      <- clust
     return(list(labels = labels, model = model))
   }
 
-  # ── Approximate HDBSCAN for large n ─────────────────────────────────────────
-  # 1. Draw a stratified random sample.
-  # 2. Run exact HDBSCAN on the sample.
-  # 3. Compute the centroid of each discovered cluster.
-  # 4. Assign every out-of-sample document to its nearest centroid.
-  message(sprintf(
-    "  n = %d > sample_size = %d: using approximate HDBSCAN (sample + assign).",
-    n, model$sample_size
-  ))
+  # EOM method: Borůvka MST via Rcpp — O(n × k) memory, scales to 100K+
+  # Pre-compute kNN with dbscan::kNN() (uses kd-trees; fast and low-memory).
+  # If the kNN graph is disconnected (nm < n-1), double k and retry until the
+  # MST is complete or k exceeds the cap.
+  n     <- nrow(X)
+  k     <- max(min_pts, 15L)
+  k_cap <- min(n - 1L, 200L)
 
-  set.seed(seed)
-  samp_idx  <- sort(sample.int(n, model$sample_size))
-  X_samp    <- X[samp_idx, , drop = FALSE]
-
-  clust <- if (model$method == "leaf") {
-    .hdbscan_leaf(X_samp, min_pts = model$min_pts)
-  } else {
-    dbscan::hdbscan(X_samp, minPts = model$min_pts)
+  repeat {
+    knn    <- dbscan::kNN(X, k = k, sort = TRUE)
+    result <- hdbscan_boruvka_cpp(knn$id, knn$dist, min_pts)
+    if (result$n_mst_edges >= n - 1L || k >= k_cap) break
+    k <- min(k * 2L, k_cap)
+    message(sprintf(
+      "  HDBSCAN: kNN graph disconnected (MST edges %d < %d), retrying with k=%d",
+      result$n_mst_edges, n - 1L, k))
   }
-  samp_labels           <- clust$cluster
-  samp_labels[samp_labels == 0L] <- -1L
-  model$fitted          <- clust
 
-  # Compute cluster centroids (including -1 as fallback).
-  cluster_ids <- sort(unique(samp_labels))
-  centroids   <- do.call(rbind, lapply(cluster_ids, function(cl) {
-    colMeans(X_samp[samp_labels == cl, , drop = FALSE])
-  }))
-  rownames(centroids) <- as.character(cluster_ids)
-
-  # Only use non-noise centroids for assignment of out-of-sample points;
-  # fall back to noise (-1) if a document is truly isolated.
-  non_noise_ids <- cluster_ids[cluster_ids != -1L]
-
-  labels    <- integer(n)
-  labels[samp_idx] <- samp_labels
-
-  rest_idx <- setdiff(seq_len(n), samp_idx)
-  if (length(rest_idx) > 0L) {
-    X_rest <- X[rest_idx, , drop = FALSE]
-
-    if (length(non_noise_ids) == 0L) {
-      labels[rest_idx] <- -1L
-    } else {
-      cent_nn <- centroids[as.character(non_noise_ids), , drop = FALSE]
-      # Nearest centroid via squared Euclidean distance: ||x - c||² = ||x||² - 2xᵀc + ||c||²
-      # outer() broadcasts the two norms correctly (avoids R's column-wise recycling).
-      dists   <- -2 * tcrossprod(X_rest, cent_nn) +
-                 outer(rowSums(X_rest^2), rowSums(cent_nn^2), "+")
-      nearest <- non_noise_ids[max.col(-dists)]
-      labels[rest_idx] <- nearest
-    }
-  }
+  labels            <- result$labels
+  labels[labels == 0L] <- -1L    # match dbscan convention: 0 → -1 for noise
 
   list(labels = labels, model = model)
 }
