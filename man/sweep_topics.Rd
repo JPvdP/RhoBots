@@ -11,6 +11,7 @@ sweep_topics(
   n_neighbors = c(5L, 15L, 30L),
   n_components = c(5L, 10L),
   min_pts = c(5L, 10L, 20L),
+  min_topics = NULL,
   ngram_range = c(1L, 1L),
   top_n_terms = 10L,
   extra_stopwords = NULL,
@@ -39,6 +40,13 @@ both are supplied.}
 
 \item{min_pts}{Integer vector of HDBSCAN \code{min_pts} values to try.}
 
+\item{min_topics}{Minimum number of topics required in the \code{best}
+selection.  When set, \code{best} is the highest-silhouette run among
+those that produced at least \code{min_topics} topics.  If no combination
+meets the constraint, a warning is issued and \code{best} falls back to
+the run with the most topics.  \code{NULL} (default) selects purely by
+silhouette.}
+
 \item{ngram_range, top_n_terms, extra_stopwords}{Fixed model parameters passed
 to \code{\link{fit_bertopic}} for every run.}
 
@@ -58,9 +66,15 @@ documents before sweeping.  Useful for fast exploration on large corpora.}
 A list of class \code{topic_sweep} with elements:
 \describe{
 \item{\code{results}}{Data frame with one row per parameter combination
-and columns for all swept parameters plus quality metrics.}
-\item{\code{best}}{The row of \code{results} with the highest silhouette
-score (ignoring failed runs).}
+and columns for all swept parameters plus quality metrics (including
+\code{n_topics}).}
+\item{\code{best}}{The selected row of \code{results}: highest silhouette
+among runs satisfying \code{min_topics}, or the run with the most topics
+if no run satisfies the constraint.}
+\item{\code{min_topics}}{The \code{min_topics} argument (or \code{NULL}).}
+\item{\code{best_met_constraint}}{Logical: \code{TRUE} when \code{best}
+satisfies the \code{min_topics} constraint (always \code{TRUE} when
+\code{min_topics = NULL}).}
 \item{\code{n_docs}}{Number of documents used (after optional sampling).}
 \item{\code{sampled}}{Logical: whether a random sample was drawn.}
 \item{\code{param_names}}{Character vector of swept parameter names.}

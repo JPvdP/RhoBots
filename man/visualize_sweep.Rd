@@ -15,7 +15,8 @@ visualize_sweep(
 \item{sweep}{A \code{topic_sweep} object from \code{\link{sweep_topics}}.}
 
 \item{metrics}{Character vector selecting which columns of
-\code{sweep$results} to display.  Default: all six quality metrics.}
+\code{sweep$results} to display.  \code{"n_topics"} is always prepended
+regardless of this argument.}
 
 \item{width, height}{Plot dimensions in pixels.  Height auto-scales to the
 number of runs when \code{NULL}.}
@@ -31,4 +32,9 @@ are comparable across metrics (green = best in column, white = worst).
 Metrics where a lower raw value is better (separation, Jaccard overlap,
 noise percentage) are inverted before normalisation.  Hover text shows the
 actual raw values.
+}
+\details{
+\code{n_topics} is always shown as the first column.  When a
+\code{min_topics} constraint was passed to \code{\link{sweep_topics}}, rows
+that did not meet it are prefixed with \code{"⊘ "} in the row labels.
 }
