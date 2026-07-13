@@ -48,7 +48,10 @@
 .load_weight_file <- function(path) {
   .check_lfs_pointer(path)
   if (grepl("\\.safetensors$", path, ignore.case = TRUE)) {
-    weights <- safetensors::safe_load_file(path, framework = "torch")
+    # device = "cpu" forces all tensors onto CPU regardless of where the model
+    # was trained; avoids aten::empty_strided CUDA errors on GPU machines.
+    weights <- safetensors::safe_load_file(path, framework = "torch",
+                                           device = "cpu")
     attr(weights, "metadata") <- NULL
     weights$metadata <- NULL
     return(weights)
@@ -75,7 +78,10 @@
         "  load_hf_bert(\"<repo_id>\", weights_path = \"/path/to/model.safetensors\")"
       )
     }
-    weights <- torch::load_state_dict(path)
+    # map_location = "cpu" forces weights onto CPU even if the .bin was saved
+    # on a GPU machine; prevents aten::empty_strided CUDA errors.
+    weights <- torch::torch_load(path,
+                                 map_location = torch::torch_device("cpu"))
     return(as.list(weights))
   }
   stop("Unknown weight file format: ", path,
