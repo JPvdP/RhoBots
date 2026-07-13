@@ -135,10 +135,10 @@ rhobots_demo <- function(n_per_book = 150L,
     hdbscan_min_pts   = 5L,
     # n_neighbors=30: larger neighbourhood → more global UMAP structure →
     # better separation of books that share the same prose style.
-    umap_n_neighbors  = 30L,
+    umap_n_neighbors  = 5L,
     # bigrams capture phrases ("white whale", "dear watson", "mr darcy") that
     # distinguish books far better than individual words alone.
-    ngram_range       = c(1L, 2L),
+    ngram_range       = c(2L, 3L),
     extra_stopwords   = .literary_stopwords,
     seed              = seed,
     verbose           = verbose
