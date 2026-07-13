@@ -2,6 +2,11 @@
 # zzz.R — Package hooks
 # =============================================================================
 
+# These roxygen tags make useDynLib/importFrom survive NAMESPACE regeneration.
+#' @useDynLib Rhobots, .registration = TRUE
+#' @importFrom Rcpp sourceCpp
+NULL
+
 .onAttach <- function(libname, pkgname) {
   if (!requireNamespace("torch", quietly = TRUE)) {
     packageStartupMessage(
