@@ -1,6 +1,6 @@
 Package: Rhobots
 Title: Brings BERTopic to R
-Version: 0.1
+Version: 0.1.1
 Authors@R: 
     person("J.P.G.", "van der Pol", , "j.p.g.vanderpol@uu.nl", role = c("aut", "cre"))
 Description: Rhobots is an R package that implements the BERTopic pipeline (Grootendorst 2022) — transformer-based sentence embedding, UMAP dimensionality reduction (McInnes, Healy, and Melville 2018), HDBSCAN density clustering (Campello, Moulavi, and Sander 2013), and class-based TF-IDF topic extraction — without any dependency on Python, conda, or reticulate. Every stage runs natively in R through torch, safetensors, tok, uwot, and dbscan. The package mirrors the accessor API of the original Python package, adds integrated quality metrics and hyperparameter search tools, and introduces part-of-speech (POS) filtered and C-value-ranked representation models (Frantzi, Ananiadou, and Mima 2000) that give researchers explicit control over which grammatical layer of language defines each topic.
