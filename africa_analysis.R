@@ -86,9 +86,13 @@ library(tidyr)
 save_html <- function(p, path) {
   if (is.null(p)) return(invisible(NULL))
   dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
+  # selfcontained = FALSE avoids the pandoc/plotly_build() path that calls
+  # scales::col_numeric() on the z-matrix and crashes when all values are
+  # identical (domain = [Inf, -Inf]).  Dependencies land in output/libs/.
   htmlwidgets::saveWidget(p,
-                          file = normalizePath(path, mustWork = FALSE),
-                          selfcontained = TRUE, libdir = NULL)
+                          file    = normalizePath(path, mustWork = FALSE),
+                          selfcontained = FALSE,
+                          libdir  = "libs")   # → output/libs/ alongside the HTMLs
   message("  saved: ", basename(path))
   invisible(p)
 }
@@ -433,6 +437,30 @@ fit <- fit_bertopic(
 print(fit)
 # print_topics() shows a compact table: topic ID, size, top terms.
 print_topics(fit)
+
+# ── Step 4a: Improve term representations with MMR ───────────────────────────
+# apply_mmr() reranks the top c-TF-IDF terms per topic using Maximal Marginal
+# Relevance (MMR).  MMR trades off relevance (how characteristic is the term
+# for this topic?) against redundancy (how similar is it to already-selected
+# terms?).  diversity = 0.2 keeps a 80/20 balance: 80 % relevance, 20 %
+# novelty.  The result is a more informative, less synonym-heavy term list.
+fit <- apply_mmr(fit, encoder = enc, diversity = 0.2)
+
+# ── Step 4b: Reassign noise documents to the nearest topic ───────────────────
+# HDBSCAN marks heterogeneous documents as noise (-1).  Most of those
+# documents are still *closer to some topic* than to the empty set; they just
+# did not meet HDBSCAN's density criterion.  reduce_outliers() assigns each
+# noise document to the topic whose centroid has the highest cosine similarity
+# to the document embedding.
+#
+# threshold = 0  →  assign EVERY noise document (use the nearest topic even
+#                    if the similarity is low).
+# threshold = 0.3 →  keep truly peripheral documents as noise.
+#
+# After reassignment .recompute_topics() is called automatically, so topic
+# sizes, centroids, and c-TF-IDF scores all update.
+fit <- reduce_outliers(fit, strategy = "embeddings", threshold = 0)
+print(fit)   # noise count should now be 0 (or very low)
 
 # ── Label topics with Ollama BEFORE saving any visualisations ────────────────
 # All visualisations (scatter, barchart, quality, map, …) pull labels from

@@ -185,8 +185,14 @@ sweep_topics <- function(docs,
       q_i <- topic_quality(fit_i,
                             top_n       = quality_top_n,
                             sample_size = quality_sample)
+      if (verbose)
+        message(sprintf("    → %d topics  sil=%.3f  noise=%.0f%%",
+                        as.integer(q_i$n_topics),
+                        q_i$silhouette$global %||% NA_real_,
+                        100 * q_i$distribution$noise_ratio))
       list(q = q_i, error = NA_character_)
     }, error = function(e) {
+      if (verbose) message("    → ERROR: ", conditionMessage(e))
       list(q = NULL, error = conditionMessage(e))
     })
   }
@@ -341,6 +347,29 @@ visualize_sweep <- function(sweep,
   df      <- sweep$results
   n_runs  <- nrow(df)
 
+  # If every run failed, return an informative placeholder instead of crashing.
+  if (all(is.na(df$silhouette))) {
+    n_failed <- sum(!is.na(df$error))
+    err_msg  <- df$error[!is.na(df$error)][1L] %||% "unknown error"
+    msg <- paste0("All ", n_failed, " sweep run(s) failed.\n",
+                  "First error: ", err_msg, "\n\n",
+                  "Check sw$results$error for details.")
+    message("visualize_sweep: all runs failed — ", err_msg)
+    return(
+      plotly::plot_ly(width = width %||% 900L, height = 300L) |>
+      plotly::layout(
+        annotations = list(list(
+          text      = gsub("\n", "<br>", msg),
+          x = 0.5, y = 0.5, xref = "paper", yref = "paper",
+          showarrow = FALSE, font = list(size = 13L, color = "#c0392b")
+        )),
+        xaxis = list(visible = FALSE),
+        yaxis = list(visible = FALSE),
+        paper_bgcolor = "white", plot_bgcolor = "white"
+      )
+    )
+  }
+
   # n_topics is always the first column shown
   metrics <- unique(c("n_topics", intersect(metrics, names(df))))
   if (length(metrics) == 0L)
@@ -381,7 +410,7 @@ visualize_sweep <- function(sweep,
 
   .minmax <- function(v) {
     rng <- range(v, na.rm = TRUE)
-    if (diff(rng) == 0) return(rep(0.5, length(v)))
+    if (!all(is.finite(rng)) || diff(rng) == 0) return(rep(0.5, length(v)))
     (v - rng[1L]) / diff(rng)
   }
 
@@ -390,13 +419,21 @@ visualize_sweep <- function(sweep,
   raw_mat  <- matrix(NA_real_, nrow = n_runs, ncol = length(metrics),
                      dimnames = list(row_lbls, metrics))
 
+  flat_cols <- character(0)
   for (m in metrics) {
     raw  <- as.numeric(df[[m]])
     norm <- .minmax(raw)
     if (m %in% invert_set) norm <- 1 - norm
     raw_mat[, m]  <- raw
     norm_mat[, m] <- norm
+    if (all(norm == 0.5, na.rm = TRUE) && !all(is.na(raw)))
+      flat_cols <- c(flat_cols, m)
   }
+  if (length(flat_cols) > 0L)
+    message("Note: all runs produced identical values for: ",
+            paste(flat_cols, collapse = ", "),
+            " — heatmap colours are uniform for those columns ",
+            "(raw values still shown in cell text).")
 
   # --- Cell text (raw values displayed inside each cell) ----------------------
   fmt_val <- function(vals, m)
@@ -437,6 +474,11 @@ visualize_sweep <- function(sweep,
   # --- Build heatmap ----------------------------------------------------------
   if (is.null(height)) height <- max(400L, 30L * n_runs + 120L)
 
+  # plotly:::map_color() calls scales::col_numeric(domain = range(z, na.rm=TRUE)).
+  # If every value in z is NA, range() returns c(Inf, -Inf) and scales crashes.
+  # Replace any remaining NAs with the neutral midpoint before passing to plotly.
+  norm_mat[is.na(norm_mat)] <- 0.5
+
   p <- plotly::plot_ly(
     width         = width,
     height        = height,
@@ -447,6 +489,7 @@ visualize_sweep <- function(sweep,
     colorscale    = list(list(0, "#f7f7f7"), list(1, "#1a7a3f")),
     zmin          = 0,
     zmax          = 1,
+    zauto         = FALSE,
     text          = cell_mat,
     hovertext     = hover_mat,
     hovertemplate = "%{hovertext}<extra></extra>",
