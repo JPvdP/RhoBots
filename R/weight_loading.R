@@ -133,7 +133,20 @@
 #' @return Invisibly, the named list of loaded weights.
 #' @export
 load_bert_weights <- function(model, weights_path, strict = FALSE) {
-  weights <- .load_weight_file(weights_path)
+  weights <- tryCatch(
+    .load_weight_file(weights_path),
+    error = function(e) {
+      msg <- conditionMessage(e)
+      if (grepl("CUDA|aten::", msg, ignore.case = TRUE))
+        stop(msg,
+             "\n\nThis error usually means PyTorch was installed with CUDA ",
+             "support but\nthe CUDA runtime is unavailable or version-mismatched.",
+             "\nFix: reinstall the torch backend for CPU only:\n",
+             "  torch::install_torch(type = \"cpu\")\n",
+             "then restart R and try again.")
+      stop(e)
+    }
+  )
 
   # Rename incoming keys to match our R module structure.
   names(weights) <- vapply(names(weights), .normalize_key, character(1))
