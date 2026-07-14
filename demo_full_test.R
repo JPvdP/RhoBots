@@ -21,7 +21,7 @@ suppressPackageStartupMessages(library(Rhobots))
 # =============================================================================
 
 CSV_PATH <- commandArgs(trailingOnly = TRUE)[1]
-if (is.na(CSV_PATH) || !nzchar(CSV_PATH)) CSV_PATH <- "abstracts.csv"
+if (is.na(CSV_PATH) || !nzchar(CSV_PATH)) CSV_PATH <- "/Users/janpieter/Desktop/Projects/UU_Sciento/abstracts_by_continent/Middle_East_abstracts.csv"
 
 OUT_DIR <- "rhobots_test_results"
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)

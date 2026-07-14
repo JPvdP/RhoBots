@@ -38,9 +38,15 @@ rhobots_demo <- function(n_per_book = 150L,
                           seed       = 42L,
                           verbose    = TRUE) {
 
-  if (!requireNamespace("gutenbergr", quietly = TRUE))
-    stop("Package 'gutenbergr' is required for the demo.\n",
-         "Install it with: install.packages('gutenbergr')")
+  for (pkg in c("gutenbergr", "plotly")) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      message("Installing missing package '", pkg, "' required for the demo...")
+      install.packages(pkg, quiet = TRUE)
+      if (!requireNamespace(pkg, quietly = TRUE))
+        stop("Could not install '", pkg, "'. ",
+             "Please run install.packages('", pkg, "') manually and try again.")
+    }
+  }
 
   # ── [1] Download books ────────────────────────────────────────────────────
   # Six books chosen for maximal thematic contrast across genres and settings.

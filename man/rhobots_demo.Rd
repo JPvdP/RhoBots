@@ -4,10 +4,10 @@
 \alias{rhobots_demo}
 \title{Run a quick Rhobots demo using classic novels from Project Gutenberg}
 \usage{
-rhobots_demo(n_per_book = 120L, device = "cpu", seed = 42L, verbose = TRUE)
+rhobots_demo(n_per_book = 150L, device = "cpu", seed = 42L, verbose = TRUE)
 }
 \arguments{
-\item{n_per_book}{Maximum paragraphs to sample per book (default 120).
+\item{n_per_book}{Maximum paragraphs to sample per book (default 150).
 Lower values are faster; higher values give richer, more stable topics.}
 
 \item{device}{Device for the encoder: \code{"cpu"} (default), \code{"mps"} (Apple
