@@ -13,8 +13,8 @@ Description: Implements the BERTopic pipeline (Grootendorst 2022) natively in R:
     hyperparameter search tools, and introduces part-of-speech (POS) filtered and
     C-value-ranked representation models (Frantzi, Ananiadou, and Mima 2000).
 License: MIT + file LICENSE
-URL: https://github.com/jpvanderpol/Rhobots
-BugReports: https://github.com/jpvanderpol/Rhobots/issues
+URL: https://github.com/JPvdP/RhoBots
+BugReports: https://github.com/JPvdP/RhoBots/issues
 SystemRequirements: Microsoft Visual C++ Redistributable 2022 (Windows only; required by torch)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
