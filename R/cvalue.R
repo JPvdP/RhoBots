@@ -1,5 +1,5 @@
 # =============================================================================
-# cvalue.R — C-value multi-word term recognition (Frantzi et al. 2000).
+# cvalue.R  --  C-value multi-word term recognition (Frantzi et al. 2000).
 #
 # C-value scores candidate multi-word terms by combining raw corpus frequency
 # with a penalty for appearing as a constituent of longer terms, weighted by
@@ -9,7 +9,7 @@
 # Reference:
 #   Frantzi, K., Ananiadou, S., & Mima, H. (2000). Automatic recognition of
 #   multi-word terms: the C-value/NC-value method. International Journal on
-#   Digital Libraries, 3(2), 115–130.
+#   Digital Libraries, 3(2), 115 - 130.
 #   https://personalpages.manchester.ac.uk/staff/sophia.ananiadou/ijodl2000.pdf
 # =============================================================================
 
@@ -21,7 +21,7 @@
 #' kept alongside the C-value-selected multi-word terms.
 #'
 #' @param max_n Maximum n-gram length to evaluate (default 4).  Longer n-grams
-#'   are more informative but also rarer; values of 3–5 cover most terminology.
+#'   are more informative but also rarer; values of 3 - 5 cover most terminology.
 #' @param threshold Minimum C-value score for a multi-word term to be retained
 #'   (default 0).  Increase to surface only well-established compound terms.
 #' @param min_freq Minimum corpus frequency for a candidate n-gram to be
@@ -29,6 +29,8 @@
 #' @return An object of class \code{cvalue_representation}.
 #' @seealso \code{\link{cvalue_terms}}, \code{\link{fit_bertopic}},
 #'   \code{\link{pos_representation}}
+#' @examples
+#' m <- cvalue_representation(max_n = 3L, threshold = 0.5)
 #' @export
 cvalue_representation <- function(max_n     = 4L,
                                    threshold = 0.0,
@@ -44,7 +46,7 @@ cvalue_representation <- function(max_n     = 4L,
 #' Compute C-value scores for candidate multi-word terms
 #'
 #' Implements the C-value method of Frantzi, Ananiadou & Mima (2000).  For
-#' each candidate n-gram \eqn{t} (n ≥ 2):
+#' each candidate n-gram \eqn{t} (n >= 2):
 #'
 #' \deqn{
 #'   C\text{-value}(t) = \log_2|t| \times
@@ -70,8 +72,12 @@ cvalue_representation <- function(max_n     = 4L,
 #'   C-value.  Terms with \code{cvalue < threshold} are excluded.
 #' @references Frantzi, K., Ananiadou, S., & Mima, H. (2000). Automatic
 #'   recognition of multi-word terms: the C-value/NC-value method.
-#'   \emph{International Journal on Digital Libraries}, 3(2), 115–130.
+#'   \emph{International Journal on Digital Libraries}, 3(2), 115 - 130.
 #' @seealso \code{\link{cvalue_representation}}, \code{\link{fit_bertopic}}
+#' @examples
+#' docs <- c("sea level rise and climate change", "sea level is rising",
+#'           "climate change impacts sea level", "Arctic ice melt sea level")
+#' cvalue_terms(docs, max_n = 3L, min_freq = 2L)
 #' @export
 cvalue_terms <- function(docs,
                           max_n     = 4L,
@@ -98,11 +104,11 @@ cvalue_terms <- function(docs,
   })
 
   # --- Step 2: count n-grams for n in 2:max_n ---------------------------------
-  # For each n (bigrams, trigrams, …, max_n-grams), slide a window of width n
+  # For each n (bigrams, trigrams, ..., max_n-grams), slide a window of width n
   # across each document's token sequence and collect the resulting strings.
   # Tokens within an n-gram are joined with "_" as a separator (e.g. "sea_level").
   # After collecting all occurrences across the corpus, table() counts them and
-  # we discard n-grams that appear fewer than min_freq times — they are too
+  # we discard n-grams that appear fewer than min_freq times  --  they are too
   # rare to be reliable terminology.
   counts_by_n <- vector("list", max_n - 1L)
   for (n in 2L:max_n) {
@@ -142,10 +148,10 @@ cvalue_terms <- function(docs,
   #   "sea level"       appears 80 times in the corpus
   #   "sea level rise"  appears 60 of those times
   # Without the penalty, "sea level" scores as very frequent (80).  But most
-  # of those occurrences are really about "sea level rise" — the bigram is not
+  # of those occurrences are really about "sea level rise"  --  the bigram is not
   # independently informative.  The penalty reduces the effective frequency of
   # "sea level" by the mean frequency of the longer terms that contain it:
-  #   C-value("sea level") = log2(2) × (80 − 60) = 1 × 20 = 20.
+  #   C-value("sea level") = log2(2) x (80 - 60) = 1 x 20 = 20.
   #
   # The containment index is a list:
   #   key   = a candidate term t (string, "_"-joined)
@@ -154,7 +160,7 @@ cvalue_terms <- function(docs,
   #
   # We only process n-grams with n >= 3, because bigrams (n=2) have no
   # shorter sub-sequences of length >= 2 to penalise.
-  containment <- list()  # term → frequencies of longer containing terms
+  containment <- list()  # term -> frequencies of longer containing terms
 
   for (i in seq_len(nrow(ngrams_df))) {
     n <- ngrams_df$n_words[i]
@@ -174,11 +180,11 @@ cvalue_terms <- function(docs,
   }
 
   # --- Step 4: compute C-value ------------------------------------------------
-  # C-value(t) = log2(|t|) × adjusted_frequency(t)
+  # C-value(t) = log2(|t|) x adjusted_frequency(t)
   #
   #   adjusted_frequency(t) =
   #     f(t)                      if t is NOT nested inside any longer term
-  #     f(t) − mean(f(b) for b ∈ P(t))   otherwise
+  #     f(t) - mean(f(b) for b in P(t))   otherwise
   #
   # where |t| = number of words, f(t) = corpus frequency, P(t) = the set of
   # longer candidate terms that contain t as a sub-sequence.
@@ -189,7 +195,7 @@ cvalue_terms <- function(docs,
   # information than shorter generic ones.
   #
   # In code: containment[[t]] is NULL when t has no longer parent terms (the
-  # "not nested" case), so is.null(cf) → use raw frequency.
+  # "not nested" case), so is.null(cf) -> use raw frequency.
   cvalue_vec <- vapply(seq_len(nrow(ngrams_df)), function(i) {
     t  <- ngrams_df$term[i]
     n  <- ngrams_df$n_words[i]

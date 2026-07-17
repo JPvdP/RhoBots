@@ -20,3 +20,15 @@ Takes the encoder's final hidden states \verb{(B, L, H)} and the attention mask
 \verb{(B, L)}, masks out padding positions, and averages along the sequence
 dimension to produce \verb{(B, H)} sentence vectors.
 }
+\examples{
+\dontrun{
+  enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  tokens <- enc$tokenizer$encode_batch(c("hello world"))
+  ids    <- torch::torch_tensor(matrix(tokens[[1L]]$ids, nrow = 1L),
+                                 dtype = torch::torch_long())
+  mask   <- torch::torch_tensor(matrix(tokens[[1L]]$attention_mask, nrow = 1L),
+                                 dtype = torch::torch_long())
+  hidden <- enc$model(ids, mask)
+  mean_pool(hidden, mask)
+}
+}

@@ -60,3 +60,13 @@ with \code{ollama serve} and pull a model with
 
 Requires the \pkg{httr2} package.
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  fit <- label_topics_llm(fit, provider = "anthropic",
+                          api_key = Sys.getenv("ANTHROPIC_API_KEY"),
+                          model = "claude-haiku-4-5-20251001")
+  get_topic_info(fit)
+}
+}

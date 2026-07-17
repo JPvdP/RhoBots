@@ -1,5 +1,5 @@
 # =============================================================================
-# topics_over_time.R — Compute and visualise how topic representations
+# topics_over_time.R  --  Compute and visualise how topic representations
 # evolve across timestamps.
 # =============================================================================
 
@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 
 # Full vocabulary c-TF-IDF matrix for a DTM subset.
-# Returns list(matrix = K×V numeric, frequency = named integer).
+# Returns list(matrix = KxV numeric, frequency = named integer).
 .full_ctfidf <- function(dtm, cluster_ids, topics) {
   K    <- length(topics)
   vocab <- colnames(dtm)
@@ -100,6 +100,14 @@
 #' @return A data frame (class \code{topics_over_time}) with columns
 #'   \code{Topic}, \code{Words}, \code{Frequency}, \code{Timestamp},
 #'   sorted by \code{Timestamp} then \code{Topic}.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   years <- as.Date(paste0(sample(2015:2023, length(abstracts), replace = TRUE), "-01-01"))
+#'   tot  <- topics_over_time(fit, timestamps = years)
+#'   visualize_topics_over_time(tot, fit = fit)
+#' }
 #' @export
 topics_over_time <- function(fit,
                               timestamps,
@@ -215,6 +223,14 @@ topics_over_time <- function(fit,
 #'   counts are shown.
 #' @param width,height Plot dimensions in pixels.
 #' @return A \code{plotly} figure.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   years <- as.Date(paste0(sample(2015:2023, length(abstracts), replace = TRUE), "-01-01"))
+#'   tot  <- topics_over_time(fit, timestamps = years)
+#'   visualize_topics_over_time(tot, fit = fit)
+#' }
 #' @export
 visualize_topics_over_time <- function(tot,
                                         topics    = NULL,
@@ -262,7 +278,7 @@ visualize_topics_over_time <- function(tot,
     label <- paste0("Topic ", t)
 
     hover <- paste0(
-      "<b>", label, "</b> — ", rows$Timestamp, "<br>",
+      "<b>", label, "</b>  --  ", rows$Timestamp, "<br>",
       "Docs: ", rows$Frequency, "<br>",
       "<i>", substr(rows$Words, 1L, 100L), "</i>"
     )

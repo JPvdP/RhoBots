@@ -1,5 +1,5 @@
 # =============================================================================
-# evaluate.R — Topic quality metrics for bertopic_fit objects
+# evaluate.R  --  Topic quality metrics for bertopic_fit objects
 # =============================================================================
 
 #' Evaluate topic quality for a fitted BERTopic model
@@ -39,10 +39,17 @@
 #'   \item{\code{overlap}}{List with \code{mean_jaccard} (scalar) and
 #'     \code{jaccard_matrix} (symmetric matrix of pairwise Jaccard scores).}
 #'   \item{\code{distribution}}{List with \code{counts} (named integer vector),
-#'     \code{noise_ratio}, \code{entropy} (normalised, in [0,1]), and
+#'     \code{noise_ratio}, \code{entropy} (normalised, in \eqn{[0,1]}), and
 #'     \code{cv} (coefficient of variation of topic sizes).}
 #'   \item{\code{silhouette}}{List with \code{global}, \code{per_topic},
 #'     \code{sampled} (logical), and \code{sample_n}.}
+#' }
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   q   <- topic_quality(fit)
+#'   print(q)
 #' }
 #' @export
 topic_quality <- function(fit, top_n = 10L, sample_size = 2000L) {
@@ -197,21 +204,21 @@ print.topic_quality <- function(x, ...) {
               x$n_topics, x$n_docs, x$n_noise,
               100 * x$distribution$noise_ratio))
   cat("  Embedding space:\n")
-  cat(sprintf("    Cohesion   (doc→centroid cos sim):     %.3f  [↑ better]\n",
+  cat(sprintf("    Cohesion   (doc->centroid cos sim):     %.3f  [higher is better]\n",
               x$cohesion$global))
-  cat(sprintf("    Separation (mean inter-centroid sim):   %.3f  [↓ better]\n",
+  cat(sprintf("    Separation (mean inter-centroid sim):   %.3f  [lower is better]\n",
               x$separation$mean_inter_topic_similarity))
   sil_note <- if (isTRUE(x$silhouette$sampled))
     sprintf(" (n=%d)", x$silhouette$sample_n) else ""
-  cat(sprintf("    Silhouette score%s:                    %.3f  [↑ better]\n",
+  cat(sprintf("    Silhouette score%s:                    %.3f  [higher is better]\n",
               sil_note, x$silhouette$global))
   cat("\n  Vocabulary:\n")
-  cat(sprintf("    Mean pairwise Jaccard overlap:         %.3f  [↓ better]\n",
+  cat(sprintf("    Mean pairwise Jaccard overlap:         %.3f  [lower is better]\n",
               x$overlap$mean_jaccard))
   cat("\n  Topic size distribution:\n")
-  cat(sprintf("    Normalised entropy:                    %.3f  [↑ more balanced]\n",
+  cat(sprintf("    Normalised entropy:                    %.3f  [higher is more balanced]\n",
               x$distribution$entropy))
-  cat(sprintf("    Coefficient of variation:              %.3f  [↓ more balanced]\n",
+  cat(sprintf("    Coefficient of variation:              %.3f  [v more balanced]\n",
               x$distribution$cv))
   invisible(x)
 }

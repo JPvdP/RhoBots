@@ -1,5 +1,5 @@
 # =============================================================================
-# guided.R — Guided / seeded topic modeling.
+# guided.R  --  Guided / seeded topic modeling.
 #
 # The user supplies seed words for each expected topic; they are turned into
 # virtual "anchor" documents that are embedded and added to the corpus before
@@ -18,7 +18,7 @@
 #' before the object is returned.
 #'
 #' @param docs Character vector of documents.
-#' @param seed_topic_list Named list of character vectors — one entry per
+#' @param seed_topic_list Named list of character vectors  --  one entry per
 #'   expected topic.  Example:
 #'   \code{list("Energy" = c("solar", "wind", "renewable", "battery"),
 #'              "Economics" = c("labour", "wages", "capital", "trade"))}.
@@ -35,6 +35,15 @@
 #' @return A \code{bertopic_fit} object.  The attribute \code{seed_map}
 #'   records which cluster each seed topic was assigned to.
 #' @seealso \code{\link{fit_bertopic}}, \code{\link{zero_shot_topics}}
+#' @examples
+#' \dontrun{
+#'   enc   <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   seeds <- list(
+#'     "Climate" = c("carbon", "emissions", "greenhouse", "warming"),
+#'     "Economy" = c("trade", "wages", "labour", "inflation")
+#'   )
+#'   fit <- guided_fit_bertopic(abstracts, seed_topic_list = seeds, encoder = enc)
+#' }
 #' @export
 guided_fit_bertopic <- function(docs,
                                  seed_topic_list,
@@ -60,7 +69,7 @@ guided_fit_bertopic <- function(docs,
   all_docs <- c(docs, seed_texts)
 
   if (verbose)
-    message("Guided fit: ", n_labels, " seed topics × ", n_anchor_weight,
+    message("Guided fit: ", n_labels, " seed topics x ", n_anchor_weight,
             " anchors each (", n_seeds, " virtual documents added).")
 
   # Embed: real docs from pre-computed matrix if available, seeds always fresh

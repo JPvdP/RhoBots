@@ -1,8 +1,8 @@
 # =============================================================================
-# pos_representation.R — POS-filtered document-term matrices via udpipe.
+# pos_representation.R  --  POS-filtered document-term matrices via udpipe.
 #
 # Allows the representation model to focus on specific grammatical categories
-# (NOUN, VERB, ADJ …) or multi-word POS patterns (ADJ+NOUN, NOUN+NOUN …)
+# (NOUN, VERB, ADJ ...) or multi-word POS patterns (ADJ+NOUN, NOUN+NOUN ...)
 # instead of the default bag-of-words vocabulary.
 # =============================================================================
 
@@ -21,7 +21,7 @@
 #' \describe{
 #'   \item{\code{NOUN}}{Common nouns (default, with \code{PROPN})}
 #'   \item{\code{PROPN}}{Proper nouns}
-#'   \item{\code{VERB}}{Main verbs — use for action-focused topics}
+#'   \item{\code{VERB}}{Main verbs  --  use for action-focused topics}
 #'   \item{\code{ADJ}}{Adjectives}
 #'   \item{\code{ADV}}{Adverbs}
 #' }
@@ -43,6 +43,8 @@
 #' @return An object of class \code{pos_representation}.
 #' @seealso \code{\link{pos_dtm}}, \code{\link{fit_bertopic}},
 #'   \code{\link{cvalue_representation}}
+#' @examples
+#' m <- pos_representation(pos = c("NOUN", "PROPN", "ADJ"))
 #' @export
 pos_representation <- function(pos         = c("NOUN", "PROPN"),
                                 patterns    = NULL,
@@ -78,8 +80,15 @@ pos_representation <- function(pos         = c("NOUN", "PROPN"),
 #' @param max_df_frac Maximum document-frequency fraction (default 0.95).
 #' @param extra_stopwords Character vector of additional words to exclude.
 #' @param verbose Print progress messages (default \code{TRUE}).
-#' @return A sparse \code{dgCMatrix}: documents × POS-filtered vocabulary.
+#' @return A sparse \code{dgCMatrix}: documents x POS-filtered vocabulary.
 #' @seealso \code{\link{pos_representation}}, \code{\link{build_dtm}}
+#' @examples
+#' \dontrun{
+#'   docs <- c("The neural network learns features.",
+#'             "Gradient descent optimizes weights.",
+#'             "Transformers use attention mechanisms.")
+#'   pos_dtm(docs, pos = c("NOUN", "VERB"))
+#' }
 #' @export
 pos_dtm <- function(docs,
                     pos             = c("NOUN", "PROPN"),

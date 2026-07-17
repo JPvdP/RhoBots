@@ -24,7 +24,7 @@ continue exploring after the demo.
 }
 \description{
 Downloads a selection of classic novels, splits them into paragraphs, and
-runs the full BERTopic pipeline: embed → UMAP → HDBSCAN → c-TF-IDF.
+runs the full BERTopic pipeline: embed -> UMAP -> HDBSCAN -> c-TF-IDF.
 Prints a topic summary and shows two interactive plots: a 2-D topic map
 and a bar chart of top terms per topic.
 }
@@ -32,4 +32,10 @@ and a bar chart of top terms per topic.
 The encoder used is \code{sentence-transformers/all-MiniLM-L6-v2} (~22 MB),
 which is downloaded once and cached by \pkg{hfhub}.  Subsequent runs skip
 the download.
+}
+\examples{
+\dontrun{
+  result <- rhobots_demo(n_per_book = 50L)
+  print_topics(result$fit)
+}
 }

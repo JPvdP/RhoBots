@@ -36,7 +36,7 @@ behaviour of the Python \code{adapters} library.
 \details{
 Available adapters on the HuggingFace Hub:
 \describe{
-\item{\code{"allenai/specter2"}}{Proximity / similarity — recommended for
+\item{\code{"allenai/specter2"}}{Proximity / similarity  --  recommended for
 document retrieval and topic modeling (default).}
 \item{\code{"allenai/specter2_adhoc_query"}}{Query-side adapter for asymmetric
 retrieval (query vs. document).}
@@ -49,7 +49,7 @@ The returned object is a standard \code{bert_encoder} compatible with
 }
 \examples{
 \dontrun{
-  enc <- load_specter2()   # proximity adapter — best for topic modeling
+  enc <- load_specter2()   # proximity adapter  --  best for topic modeling
   emb <- embed_texts(enc, c("Graph neural networks for drug discovery.",
                              "Climate tipping points and carbon budgets."))
 }

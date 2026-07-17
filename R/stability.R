@@ -1,5 +1,5 @@
 # =============================================================================
-# stability.R — Topic stability analysis across multiple random seeds.
+# stability.R  --  Topic stability analysis across multiple random seeds.
 #
 # Answers "how reproducible are these topics?" by running fit_bertopic()
 # multiple times and measuring agreement via the Adjusted Rand Index (ARI).
@@ -40,7 +40,7 @@
 #' @param verbose Print per-run progress (default \code{TRUE}).
 #' @return A list of class \code{stability_result} with elements:
 #' \describe{
-#'   \item{\code{ari_matrix}}{Symmetric ARI matrix (\code{n_runs × n_runs}).}
+#'   \item{\code{ari_matrix}}{Symmetric ARI matrix (\code{n_runs x n_runs}).}
 #'   \item{\code{mean_ari}}{Mean ARI across all off-diagonal pairs.}
 #'   \item{\code{per_doc_stability}}{For each document, the fraction of runs
 #'     that agreed on the modal topic assignment (1.0 = always the same).}
@@ -48,6 +48,13 @@
 #'   \item{\code{fits}}{List of \code{bertopic_fit} objects (one per run).}
 #' }
 #' @seealso \code{\link{visualize_stability}}, \code{\link{sweep_topics}}
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb  <- embed_texts(enc, abstracts)
+#'   stab <- stability_analysis(abstracts, emb, n_runs = 3L)
+#'   stab$mean_ari
+#' }
 #' @export
 stability_analysis <- function(docs, embeddings, n_runs = 5L, seeds = NULL,
                                 ..., verbose = TRUE) {
@@ -75,7 +82,7 @@ stability_analysis <- function(docs, embeddings, n_runs = 5L, seeds = NULL,
   seeds_v <- seeds[valid]
   k       <- length(fits_v)
   if (k < 2L)
-    stop("Fewer than 2 runs succeeded — cannot compute stability.")
+    stop("Fewer than 2 runs succeeded  --  cannot compute stability.")
 
   # Pairwise ARI
   ari_mat <- matrix(1.0, k, k,
@@ -128,8 +135,15 @@ print.stability_result <- function(x, ...) {
 #' Interactive heatmap of pairwise ARI scores
 #'
 #' @param stab A \code{stability_result} from \code{\link{stability_analysis}}.
-#' @param width,height Plot dimensions in pixels (default 550 × 500).
+#' @param width,height Plot dimensions in pixels (default 550 x 500).
 #' @return A \code{plotly} figure.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb  <- embed_texts(enc, abstracts)
+#'   stab <- stability_analysis(abstracts, emb, n_runs = 3L)
+#'   visualize_stability(stab)
+#' }
 #' @export
 visualize_stability <- function(stab, width = 550L, height = 500L) {
   if (!requireNamespace("plotly", quietly = TRUE))
@@ -158,7 +172,7 @@ visualize_stability <- function(stab, width = 550L, height = 500L) {
     ) |>
     plotly::layout(
       title = list(text = sprintf(
-        "Topic stability — mean ARI = %.3f", stab$mean_ari)),
+        "Topic stability  --  mean ARI = %.3f", stab$mean_ari)),
       xaxis = list(title = ""),
       yaxis = list(title = "", autorange = "reversed")
     )

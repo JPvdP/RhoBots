@@ -18,3 +18,10 @@ A data frame with columns \code{term} and \code{score}, or
 \description{
 Get term-score representation for a single topic
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  get_topic(fit, topic = 0L)
+}
+}

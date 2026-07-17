@@ -1,9 +1,9 @@
 # =============================================================================
-# demo.R — Self-contained demonstration of the Rhobots pipeline.
+# demo.R  --  Self-contained demonstration of the Rhobots pipeline.
 # =============================================================================
 
 # Common words that dominate 19th-century narrative prose but carry no topic
-# signal — they swamp c-TF-IDF when only unigrams are used.
+# signal  --  they swamp c-TF-IDF when only unigrams are used.
 .literary_stopwords <- c(
   "said", "one", "upon", "great", "little", "came", "went", "man", "men",
   "mr", "mrs", "miss", "sir", "now", "still", "yet", "also", "well",
@@ -15,7 +15,7 @@
 #' Run a quick Rhobots demo using classic novels from Project Gutenberg
 #'
 #' Downloads a selection of classic novels, splits them into paragraphs, and
-#' runs the full BERTopic pipeline: embed → UMAP → HDBSCAN → c-TF-IDF.
+#' runs the full BERTopic pipeline: embed -> UMAP -> HDBSCAN -> c-TF-IDF.
 #' Prints a topic summary and shows two interactive plots: a 2-D topic map
 #' and a bar chart of top terms per topic.
 #'
@@ -32,6 +32,11 @@
 #' @return Invisibly, a list with elements `fit`, `embeddings`, `encoder`,
 #'   and `texts` (a data frame with columns `text` and `title`), so you can
 #'   continue exploring after the demo.
+#' @examples
+#' \dontrun{
+#'   result <- rhobots_demo(n_per_book = 50L)
+#'   print_topics(result$fit)
+#' }
 #' @export
 rhobots_demo <- function(n_per_book = 150L,
                           device     = "cpu",
@@ -39,24 +44,20 @@ rhobots_demo <- function(n_per_book = 150L,
                           verbose    = TRUE) {
 
   for (pkg in c("gutenbergr", "plotly")) {
-    if (!requireNamespace(pkg, quietly = TRUE)) {
-      message("Installing missing package '", pkg, "' required for the demo...")
-      install.packages(pkg, quiet = TRUE)
-      if (!requireNamespace(pkg, quietly = TRUE))
-        stop("Could not install '", pkg, "'. ",
-             "Please run install.packages('", pkg, "') manually and try again.")
-    }
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop("Package '", pkg, "' is required for the demo but is not installed.\n",
+           "  Please run:  install.packages('", pkg, "')")
   }
 
-  # ── [1] Download books ────────────────────────────────────────────────────
+  # -- [1] Download books ----------------------------------------------------
   # Six books chosen for maximal thematic contrast across genres and settings.
   book_ids <- c(
-    1342L,   # Pride and Prejudice      — Jane Austen       (romance/society)
-    84L,     # Frankenstein             — Mary Shelley      (gothic/science)
-    2701L,   # Moby-Dick                — Herman Melville   (adventure/sea)
-    1661L,   # The Adventures of Sherlock Holmes — Conan Doyle (mystery)
-    36L,     # The War of the Worlds    — H.G. Wells        (science fiction)
-    74L      # The Adventures of Tom Sawyer — Mark Twain    (childhood/frontier)
+    1342L,   # Pride and Prejudice       --  Jane Austen       (romance/society)
+    84L,     # Frankenstein              --  Mary Shelley      (gothic/science)
+    2701L,   # Moby-Dick                 --  Herman Melville   (adventure/sea)
+    1661L,   # The Adventures of Sherlock Holmes  --  Conan Doyle (mystery)
+    36L,     # The War of the Worlds     --  H.G. Wells        (science fiction)
+    74L      # The Adventures of Tom Sawyer  --  Mark Twain    (childhood/frontier)
   )
   book_labels <- c(
     "Pride and Prejudice",
@@ -80,7 +81,7 @@ rhobots_demo <- function(n_per_book = 150L,
            "\nCheck your internet connection and try again.")
   )
 
-  # ── [2] Extract paragraphs ────────────────────────────────────────────────
+  # -- [2] Extract paragraphs ------------------------------------------------
   # Use 250-char minimum: short fragments are noisy and drag down topic quality.
   .to_paragraphs <- function(lines, min_chars = 250L) {
     paras <- character(0)
@@ -124,14 +125,14 @@ rhobots_demo <- function(n_per_book = 150L,
     message("  Using ", nrow(texts_df), " paragraphs from ",
             length(unique(texts_df$title)), " books.")
 
-  # ── [3] Embed ─────────────────────────────────────────────────────────────
+  # -- [3] Embed -------------------------------------------------------------
   if (verbose) message("Loading encoder (all-MiniLM-L6-v2)...")
   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
 
   if (verbose) message("Embedding paragraphs on '", device, "'...")
   emb <- embed_texts(enc, texts_df$text, device = device, verbose = verbose)
 
-  # ── [4] Fit topic model ───────────────────────────────────────────────────
+  # -- [4] Fit topic model ---------------------------------------------------
   if (verbose) message("Fitting topic model...")
   fit <- fit_bertopic(
     docs              = texts_df$text,
@@ -139,7 +140,7 @@ rhobots_demo <- function(n_per_book = 150L,
     # min_pts=5: narrative prose clusters more tightly than academic text;
     # a lower threshold lets HDBSCAN find granular book-specific topics.
     hdbscan_min_pts   = 5L,
-    # n_neighbors=30: larger neighbourhood → more global UMAP structure →
+    # n_neighbors=30: larger neighbourhood -> more global UMAP structure ->
     # better separation of books that share the same prose style.
     umap_n_neighbors  = 5L,
     # bigrams capture phrases ("white whale", "dear watson", "mr darcy") that
@@ -150,8 +151,8 @@ rhobots_demo <- function(n_per_book = 150L,
     verbose           = verbose
   )
 
-  # ── [5] Results ───────────────────────────────────────────────────────────
-  if (verbose) message("\n── Demo results ──────────────────────────────────────")
+  # -- [5] Results -----------------------------------------------------------
+  if (verbose) message("\n-- Demo results --------------------------------------")
   print(fit)
 
   p_topics <- visualize_topics(fit)
@@ -162,7 +163,7 @@ rhobots_demo <- function(n_per_book = 150L,
 
   if (verbose)
     message("\nThe returned list contains $fit, $embeddings, $encoder, and ",
-            "$texts\nso you can keep exploring — e.g. print_topics(result$fit).")
+            "$texts\nso you can keep exploring  --  e.g. print_topics(result$fit).")
 
   invisible(list(fit        = fit,
                  embeddings = emb,

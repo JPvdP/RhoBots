@@ -1,15 +1,15 @@
 # =============================================================================
-# models.R — Pluggable dimensionality-reduction and clustering models.
+# models.R  --  Pluggable dimensionality-reduction and clustering models.
 #
 # S3 protocol
 # -----------
 # Dimensionality reduction
-#   dim_reduce(model, X, seed, verbose) → list(embedding, model)
-#   dim_project(model, X)              → matrix   (transform new data)
+#   dim_reduce(model, X, seed, verbose) -> list(embedding, model)
+#   dim_project(model, X)              -> matrix   (transform new data)
 #
 # Clustering
-#   cluster_docs(model, X, seed)       → list(labels, model)
-#   labels: integer vector, -1 = noise, 0, 1, 2, … = cluster IDs
+#   cluster_docs(model, X, seed)       -> list(labels, model)
+#   labels: integer vector, -1 = noise, 0, 1, 2, ... = cluster IDs
 #
 # Built-in models
 # ---------------
@@ -34,6 +34,13 @@
 #' @param verbose Print progress (default \code{FALSE}).
 #' @return A list with \code{$embedding} (reduced matrix) and \code{$model}
 #'   (the fitted model, for use with \code{\link{dim_project}}).
+#' @examples
+#' \dontrun{
+#'   m   <- umap_reduction(n_neighbors = 5L, n_components = 2L)
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb <- embed_texts(enc, c("first doc", "second doc", "third doc"))
+#'   res <- dim_reduce(m, emb)
+#' }
 #' @export
 dim_reduce <- function(model, X, seed = 42L, verbose = FALSE)
   UseMethod("dim_reduce")
@@ -45,6 +52,15 @@ dim_reduce <- function(model, X, seed = 42L, verbose = FALSE)
 #' @param X New numeric matrix to project.
 #' @return A numeric matrix with the same number of columns as the training
 #'   embedding.
+#' @examples
+#' \dontrun{
+#'   m    <- umap_reduction(n_neighbors = 5L, n_components = 2L)
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb  <- embed_texts(enc, c("first doc", "second doc", "third doc"))
+#'   res  <- dim_reduce(m, emb)
+#'   new_emb <- embed_texts(enc, c("new document"))
+#'   dim_project(res$model, new_emb)
+#' }
 #' @export
 dim_project <- function(model, X) UseMethod("dim_project")
 
@@ -56,6 +72,15 @@ dim_project <- function(model, X) UseMethod("dim_project")
 #' @return A list with \code{$labels} (integer vector; \code{-1} = noise,
 #'   \code{0, 1, 2, ...} = cluster IDs) and \code{$model} (the fitted
 #'   model).
+#' @examples
+#' \dontrun{
+#'   m   <- hdbscan_clustering(min_pts = 3L)
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb <- embed_texts(enc, c("cats and dogs", "machine learning",
+#'                              "pets and animals", "neural networks"))
+#'   res <- cluster_docs(m, emb)
+#'   res$labels
+#' }
 #' @export
 cluster_docs <- function(model, X, seed = 42L) UseMethod("cluster_docs")
 
@@ -71,6 +96,8 @@ cluster_docs <- function(model, X, seed = 42L) UseMethod("cluster_docs")
 #' @param n_neighbors,n_components,min_dist,metric Passed directly to
 #'   \code{uwot::umap}.
 #' @return A \code{umap_reduction} model object.
+#' @examples
+#' m <- umap_reduction(n_neighbors = 10L, n_components = 3L)
 #' @export
 umap_reduction <- function(n_neighbors  = 15L,
                             n_components = 5L,
@@ -120,6 +147,8 @@ dim_project.umap_reduction <- function(model, X) {
 #' @param scale. Whether to scale variables before computing PCA
 #'   (default \code{FALSE}; BERT embeddings are already normalised).
 #' @return A \code{pca_reduction} model object.
+#' @examples
+#' m <- pca_reduction(n_components = 3L)
 #' @export
 pca_reduction <- function(n_components = 5L, scale. = FALSE) {
   structure(
@@ -157,6 +186,8 @@ dim_project.pca_reduction <- function(model, X) {
 #' the original space.
 #'
 #' @return A \code{no_reduction} model object.
+#' @examples
+#' m <- no_reduction()
 #' @export
 no_reduction <- function() {
   structure(list(), class = c("no_reduction", "dim_reduction_model"))
@@ -177,16 +208,18 @@ dim_project.no_reduction <- function(model, X) X
 #'
 #' HDBSCAN density clustering
 #'
-#' Default clustering model for \code{\link{fit_bertopic}}.  Uses a Borůvka
+#' Default clustering model for \code{\link{fit_bertopic}}.  Uses a Boruvka
 #' minimum spanning tree on the mutual-reachability kNN graph (Rcpp) instead
 #' of the naive Prim's algorithm in \code{dbscan::hdbscan()}, which avoids the
-#' O(n²) memory cost that causes OOM at ~30K+ documents.  Memory is O(n × k)
+#' O(n^2) memory cost that causes OOM at ~30K+ documents.  Memory is O(n x k)
 #' throughout, making it practical at 100K+ documents.
 #'
 #' @param min_pts Minimum cluster size and core-distance order (default 10).
 #' @param method \code{"eom"} (excess of mass, default) or \code{"leaf"}.
 #'   The leaf method uses \code{dbscan::hdbscan()} on small corpora only.
 #' @return An \code{hdbscan_clustering} model object.
+#' @examples
+#' m <- hdbscan_clustering(min_pts = 5L)
 #' @export
 hdbscan_clustering <- function(min_pts = 10L, method = c("eom", "leaf")) {
   method <- match.arg(method)
@@ -209,7 +242,7 @@ cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
     return(list(labels = labels, model = model))
   }
 
-  # EOM method: Borůvka MST via Rcpp — O(n × k) memory, scales to 100K+
+  # EOM method: Boruvka MST via Rcpp  --  O(n x k) memory, scales to 100K+
   # Pre-compute kNN with dbscan::kNN() (uses kd-trees; fast and low-memory).
   # If the kNN graph is disconnected (nm < n-1), double k and retry until the
   # MST is complete or k exceeds the cap.
@@ -228,7 +261,7 @@ cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
   }
 
   labels            <- result$labels
-  labels[labels == 0L] <- -1L    # match dbscan convention: 0 → -1 for noise
+  labels[labels == 0L] <- -1L    # match dbscan convention: 0 -> -1 for noise
 
   list(labels = labels, model = model)
 }
@@ -247,6 +280,8 @@ cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
 #' @param nstart Number of random restarts (default 10).
 #' @param iter.max Maximum iterations (default 300).
 #' @return A \code{kmeans_clustering} model object.
+#' @examples
+#' m <- kmeans_clustering(k = 5L)
 #' @export
 kmeans_clustering <- function(k, nstart = 10L, iter.max = 300L) {
   if (missing(k)) stop("'k' (number of clusters) is required.")
@@ -282,6 +317,8 @@ cluster_docs.kmeans_clustering <- function(model, X, seed = 42L) {
 #' @param linkage Linkage method passed to \code{stats::hclust}
 #'   (default \code{"ward.D2"}).
 #' @return An \code{agglomerative_clustering} model object.
+#' @examples
+#' m <- agglomerative_clustering(k = 5L)
 #' @export
 agglomerative_clustering <- function(k, linkage = "ward.D2") {
   if (missing(k)) stop("'k' (number of clusters) is required.")

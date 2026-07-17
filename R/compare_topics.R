@@ -1,5 +1,5 @@
 # =============================================================================
-# compare_topics.R — Class-conditional topic analysis.
+# compare_topics.R  --  Class-conditional topic analysis.
 #
 # Measures which topics are over- or under-represented in user-defined groups
 # (e.g. time periods, countries, treatment arms) using signed chi-square
@@ -36,11 +36,19 @@
 #'   \item{\code{result}}{Tidy data frame with columns \code{Topic},
 #'     \code{Name}, \code{Group}, \code{Observed}, \code{Expected},
 #'     \code{Stat}.}
-#'   \item{\code{table}}{Raw contingency table (topics × groups).}
+#'   \item{\code{table}}{Raw contingency table (topics x groups).}
 #'   \item{\code{global_statistic}, \code{global_pvalue}}{Global chi-square
 #'     statistic and p-value (\code{NA} when \code{method = "log_ratio"}).}
 #' }
 #' @seealso \code{\link{visualize_comparison}}
+#' @examples
+#' \dontrun{
+#'   enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit    <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   groups <- sample(c("A", "B"), length(abstracts), replace = TRUE)
+#'   comp   <- compare_topics(fit, groups)
+#'   visualize_comparison(comp)
+#' }
 #' @export
 compare_topics <- function(fit, groups,
                             method    = c("chi2", "log_ratio"),
@@ -71,7 +79,7 @@ compare_topics <- function(fit, groups,
   topics_nn    <- as.integer(rownames(tab))   # restrict to topics in the table
 
   if (verbose) {
-    cat("Contingency table (topics × groups, non-noise docs only):\n")
+    cat("Contingency table (topics x groups, non-noise docs only):\n")
     print(tab)
     cat("\n")
   }
@@ -164,7 +172,7 @@ print.compare_topics_result <- function(x, top_n = 10L, ...) {
   invisible(x)
 }
 
-#' Interactive heatmap of topic–group associations
+#' Interactive heatmap of topic - group associations
 #'
 #' Displays the signed chi-square contributions or log\eqn{_2} ratios from
 #' \code{\link{compare_topics}} as a diverging colour heatmap: blue = over-
@@ -178,8 +186,16 @@ print.compare_topics_result <- function(x, top_n = 10L, ...) {
 #'   largest mean absolute statistic.  \code{NULL} (default) shows all topics.
 #' @param max_label_chars Maximum characters for topic labels before truncation
 #'   with an ellipsis (default 25).
-#' @param width,height Plot dimensions in pixels (default 1000 × 420).
+#' @param width,height Plot dimensions in pixels (default 1000 x 420).
 #' @return A \code{plotly} figure.
+#' @examples
+#' \dontrun{
+#'   enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit    <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   groups <- sample(c("A", "B"), length(abstracts), replace = TRUE)
+#'   comp   <- compare_topics(fit, groups)
+#'   visualize_comparison(comp)
+#' }
 #' @export
 visualize_comparison <- function(comp,
                                   top_n_topics   = NULL,
@@ -208,12 +224,12 @@ visualize_comparison <- function(comp,
     txt <- gsub("_", " ", txt)
     txt <- trimws(txt)
     if (nchar(txt) > max_label_chars)
-      paste0(substr(txt, 1L, max_label_chars - 1L), "…")
+      paste0(substr(txt, 1L, max_label_chars - 1L), "...")
     else
       txt
   }, character(1L))
 
-  # Build a topics × groups matrix of statistics (NA = cell below min_count).
+  # Build a topics x groups matrix of statistics (NA = cell below min_count).
   z_mat   <- matrix(NA_real_, length(topics_ord), length(groups_ord),
                     dimnames = list(as.character(topics_ord), groups_ord))
   txt_mat <- z_mat
@@ -230,8 +246,8 @@ visualize_comparison <- function(comp,
 
   abs_max <- max(abs(z_mat), na.rm = TRUE)
 
-  stat_label <- if (comp$method == "chi2") "Signed χ²" else "log₂ ratio"
-  title_str  <- sprintf("%s by group × topic", stat_label)
+  stat_label <- if (comp$method == "chi2") "Signed chi2" else "log2 ratio"
+  title_str  <- sprintf("%s by group x topic", stat_label)
 
   plotly::plot_ly(width = width, height = height) |>
     plotly::add_heatmap(

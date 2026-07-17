@@ -1,5 +1,5 @@
 # =============================================================================
-# bertopic_methods.R — Accessor methods and out-of-sample prediction for
+# bertopic_methods.R  --  Accessor methods and out-of-sample prediction for
 # bertopic_fit objects.
 #
 # Mirrors the Python BERTopic API:
@@ -16,6 +16,12 @@
 #' @return A named list; each element is a data frame with columns
 #'   \code{term} and \code{score} sorted by descending score.  Names are
 #'   topic IDs (character strings, including \code{"-1"} for noise).
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   get_topics(fit, top_n = 5L)
+#' }
 #' @export
 get_topics <- function(fit, top_n = NULL) {
   tt <- fit$topic_terms
@@ -36,6 +42,12 @@ get_topics <- function(fit, top_n = NULL) {
 #' @param topic Integer topic ID.
 #' @return A data frame with columns \code{term} and \code{score}, or
 #'   \code{NULL} if the topic ID is not found.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   get_topic(fit, topic = 0L)
+#' }
 #' @export
 get_topic <- function(fit, topic) {
   rows <- fit$topic_terms[fit$topic_terms$topic == as.integer(topic), ]
@@ -54,9 +66,15 @@ get_topic <- function(fit, topic) {
 #'   \describe{
 #'     \item{\code{Topic}}{Integer topic ID (\code{-1} = noise/unassigned).}
 #'     \item{\code{Count}}{Number of documents assigned to this topic.}
-#'     \item{\code{Name}}{Auto-generated label (e.g. \code{"0_model_data_…"}).}
+#'     \item{\code{Name}}{Auto-generated label (e.g. \code{"0_model_data_..."}).}
 #'     \item{\code{Representation}}{Top-5 terms, comma-separated.}
 #'   }
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   get_topic_info(fit)
+#' }
 #' @export
 get_topic_info <- function(fit, topic = NULL) {
   all_topics <- sort(unique(fit$clusters))
@@ -87,6 +105,12 @@ get_topic_info <- function(fit, topic = NULL) {
 #'   each with \code{length(fit$docs)} elements.
 #' @return A data frame with one row per document and columns
 #'   \code{Document}, \code{Topic}, \code{Name}, \code{Top_words}.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   get_document_info(fit)
+#' }
 #' @export
 get_document_info <- function(fit, metadata = NULL) {
   topics    <- fit$clusters
@@ -123,6 +147,12 @@ get_document_info <- function(fit, metadata = NULL) {
 #'   a named list for all non-noise topics.
 #' @return A character vector (single topic) or a named list of character
 #'   vectors (all topics).
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   get_representative_docs(fit, topic = 0L)
+#' }
 #' @export
 get_representative_docs <- function(fit, topic = NULL) {
   if (!is.null(topic))
@@ -141,6 +171,12 @@ get_representative_docs <- function(fit, topic = NULL) {
 #' @param top_n Number of topics to return (default 5).
 #' @return A data frame with columns \code{Topic}, \code{Name}, \code{Score},
 #'   sorted by descending score.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   find_topics(fit, "neural network")
+#' }
 #' @export
 find_topics <- function(fit, search_term, top_n = 5L) {
   tt              <- fit$topic_terms
@@ -175,7 +211,7 @@ find_topics <- function(fit, search_term, top_n = 5L) {
 #'
 #' Embeds new documents (or accepts pre-computed embeddings) and assigns each
 #' to the nearest topic centroid by cosine similarity.  Noise (\code{-1}) is
-#' never assigned as a target — all new documents receive a real topic.
+#' never assigned as a target  --  all new documents receive a real topic.
 #'
 #' @param object A \code{bertopic_fit} from \code{\link{fit_bertopic}}.
 #' @param new_docs Character vector of documents to predict.
@@ -193,6 +229,14 @@ find_topics <- function(fit, search_term, top_n = 5L) {
 #'       (\code{nrow = length(new_docs)}, \code{ncol = n_topics}) of cosine
 #'       similarities to every topic centroid.}
 #'   }
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   pred <- predict(fit, new_docs = c("new paper about deep learning"),
+#'                   encoder = enc)
+#'   pred$topics
+#' }
 #' @export
 predict.bertopic_fit <- function(object, new_docs, encoder = NULL,
                                   embeddings = NULL, ...) {
@@ -209,7 +253,7 @@ predict.bertopic_fit <- function(object, new_docs, encoder = NULL,
   centroids <- object$topic_centroids
   if (is.null(centroids) || nrow(centroids) == 0L)
     stop("No topic centroids in this fit. ",
-         "All documents were likely assigned to noise (-1) — try lowering ",
+         "All documents were likely assigned to noise (-1)  --  try lowering ",
          "hdbscan_min_pts or increasing the corpus size, then re-run fit_bertopic().")
 
   sim_mat <- emb_n %*% t(centroids)
@@ -237,6 +281,13 @@ predict.bertopic_fit <- function(object, new_docs, encoder = NULL,
 #' @param encoder Optional encoder from \code{\link{load_hf_bert}}.
 #' @param embeddings Optional pre-computed embedding matrix.
 #' @return Same as \code{\link{predict.bertopic_fit}}.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   pred <- transform_bertopic(fit, new_docs = c("new document"), encoder = enc)
+#'   pred$topics
+#' }
 #' @export
 transform_bertopic <- function(fit, new_docs, encoder = NULL,
                                 embeddings = NULL) {

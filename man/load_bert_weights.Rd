@@ -12,7 +12,7 @@ load_bert_weights(model, weights_path, strict = FALSE)
 \item{weights_path}{Path to a \code{.safetensors} or \code{.bin} file.}
 
 \item{strict}{If TRUE, errors when expected parameters are missing.  If
-FALSE, just warns.  Default FALSE — most checkpoints have a handful of
+FALSE, just warns.  Default FALSE  --  most checkpoints have a handful of
 extra task-head keys that are correctly ignored.}
 }
 \value{
@@ -25,7 +25,15 @@ keys we don't need (\verb{pooler.*}, \verb{cls.*}, \verb{lm_head.*}, ...), and a
 the result via \code{model$load_state_dict()}.
 }
 \details{
-Most users don't call this directly — it's invoked by \code{\link[=load_hf_bert]{load_hf_bert()}}.
+Most users don't call this directly  --  it's invoked by \code{\link[=load_hf_bert]{load_hf_bert()}}.
 Exposed for users who construct a model manually or want to load
 alternative weight files.
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  # load_bert_weights() is called internally by load_hf_bert() and
+  # load_specter2(); advanced users can call it directly when injecting
+  # custom weights into an existing model object.
+}
 }

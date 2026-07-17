@@ -22,3 +22,10 @@ Ranks non-noise topics by the c-TF-IDF score of \code{search_term}.  If
 the term is absent from the vocabulary entirely, falls back to substring
 matching across each topic's top terms.
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  find_topics(fit, "neural network")
+}
+}

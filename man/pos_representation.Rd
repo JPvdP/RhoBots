@@ -54,10 +54,13 @@ Common UPOS tags:
 \describe{
 \item{\code{NOUN}}{Common nouns (default, with \code{PROPN})}
 \item{\code{PROPN}}{Proper nouns}
-\item{\code{VERB}}{Main verbs — use for action-focused topics}
+\item{\code{VERB}}{Main verbs  --  use for action-focused topics}
 \item{\code{ADJ}}{Adjectives}
 \item{\code{ADV}}{Adverbs}
 }
+}
+\examples{
+m <- pos_representation(pos = c("NOUN", "PROPN", "ADJ"))
 }
 \seealso{
 \code{\link{pos_dtm}}, \code{\link{fit_bertopic}},

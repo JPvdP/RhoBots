@@ -36,5 +36,14 @@ actual raw values.
 \details{
 \code{n_topics} is always shown as the first column.  When a
 \code{min_topics} constraint was passed to \code{\link{sweep_topics}}, rows
-that did not meet it are prefixed with \code{"⊘ "} in the row labels.
+that did not meet it are prefixed with \code{"[x] "} in the row labels.
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb <- embed_texts(enc, abstracts, normalize = TRUE)
+  sw  <- sweep_topics(abstracts, embeddings = emb,
+                       n_neighbors = c(5L, 15L), min_pts = c(5L, 10L))
+  visualize_sweep(sw)
+}
 }

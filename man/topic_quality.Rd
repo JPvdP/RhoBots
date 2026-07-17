@@ -26,7 +26,7 @@ A list of class \code{topic_quality} with elements:
 \item{\code{overlap}}{List with \code{mean_jaccard} (scalar) and
 \code{jaccard_matrix} (symmetric matrix of pairwise Jaccard scores).}
 \item{\code{distribution}}{List with \code{counts} (named integer vector),
-\code{noise_ratio}, \code{entropy} (normalised, in \link{0,1}), and
+\code{noise_ratio}, \code{entropy} (normalised, in \eqn{[0,1]}), and
 \code{cv} (coefficient of variation of topic sizes).}
 \item{\code{silhouette}}{List with \code{global}, \code{per_topic},
 \code{sampled} (logical), and \code{sample_n}.}
@@ -52,4 +52,12 @@ A \strong{silhouette score} in the full embedding space is also computed.
 It is the standard cluster-quality measure: values near 1 mean documents
 sit close to their own centroid and far from the nearest other cluster;
 values near 0 or below indicate overlapping or mis-assigned topics.
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  q   <- topic_quality(fit)
+  print(q)
+}
 }

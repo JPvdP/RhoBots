@@ -31,7 +31,7 @@ C-value.  Terms with \code{cvalue < threshold} are excluded.
 }
 \description{
 Implements the C-value method of Frantzi, Ananiadou & Mima (2000).  For
-each candidate n-gram \eqn{t} (n ≥ 2):
+each candidate n-gram \eqn{t} (n >= 2):
 }
 \details{
 \deqn{
@@ -47,10 +47,15 @@ where \eqn{|t|} is word count, \eqn{f(t)} is corpus frequency, and
 \eqn{P(t)} is the set of longer candidate terms that contain \eqn{t} as a
 contiguous sub-sequence.
 }
+\examples{
+docs <- c("sea level rise and climate change", "sea level is rising",
+          "climate change impacts sea level", "Arctic ice melt sea level")
+cvalue_terms(docs, max_n = 3L, min_freq = 2L)
+}
 \references{
 Frantzi, K., Ananiadou, S., & Mima, H. (2000). Automatic
 recognition of multi-word terms: the C-value/NC-value method.
-\emph{International Journal on Digital Libraries}, 3(2), 115–130.
+\emph{International Journal on Digital Libraries}, 3(2), 115 - 130.
 }
 \seealso{
 \code{\link{cvalue_representation}}, \code{\link{fit_bertopic}}

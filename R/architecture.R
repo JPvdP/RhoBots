@@ -1,5 +1,5 @@
 # =============================================================================
-# architecture.R — BERT-family and MPNet transformer encoders as torch
+# architecture.R  --  BERT-family and MPNet transformer encoders as torch
 # nn_modules.
 #
 # WHAT THIS FILE DOES
@@ -20,20 +20,20 @@
 #
 # Our R nn_module tree uses the same names and nesting, so a single lookup
 # table `model$state_dict()` matches the checkpoint keys one-to-one.  No
-# manual remapping needed — we just strip optional top-level prefixes.
+# manual remapping needed  --  we just strip optional top-level prefixes.
 #
 # HOW THESE MODULES RELATE
 # ------------------------
 # BERT:
 #   bert_model
-#     └── bert_embeddings       word + position + token-type → LayerNorm
-#     └── bert_encoder
-#           └── bert_layer  × N
-#                 ├── bert_attention
-#                 │     ├── bert_self_attention   (Q/K/V → scaled dot-product)
-#                 │     └── bert_self_output      (dense → LayerNorm + residual)
-#                 ├── bert_intermediate            (dense → GeLU)
-#                 └── bert_output                 (dense → LayerNorm + residual)
+#     +-- bert_embeddings       word + position + token-type -> LayerNorm
+#     +-- bert_encoder
+#           +-- bert_layer  x N
+#                 +-- bert_attention
+#                 |     +-- bert_self_attention   (Q/K/V -> scaled dot-product)
+#                 |     +-- bert_self_output      (dense -> LayerNorm + residual)
+#                 +-- bert_intermediate            (dense -> GeLU)
+#                 +-- bert_output                 (dense -> LayerNorm + residual)
 #
 # MPNet (mpnet_model) follows the same skeleton but swaps in:
 #   mpnet_embeddings   (no token-type; positions start at 2)
@@ -60,19 +60,19 @@
 # Three separate embedding tables are summed together:
 #
 #   word_embeddings:
-#     Each token ID → a 768-dimensional vector.  This is the core vocabulary
+#     Each token ID -> a 768-dimensional vector.  This is the core vocabulary
 #     lookup.  Vocabulary size is typically 30,522 for standard BERT.
 #
 #   position_embeddings:
-#     Each sequence position (0, 1, 2, …) → a 768-dimensional vector.
+#     Each sequence position (0, 1, 2, ...) -> a 768-dimensional vector.
 #     Without this, the model would treat "dog bites man" identically to
-#     "man bites dog" — order would be invisible.
+#     "man bites dog"  --  order would be invisible.
 #
 #   token_type_embeddings:
 #     Each token belongs to "segment A" (0) or "segment B" (1).  Used during
 #     pre-training on sentence-pair tasks (e.g. next-sentence prediction).
 #     For single-sentence encoding the IDs are all zero, so this adds the
-#     same constant offset to every position — effectively a no-op but the
+#     same constant offset to every position  --  effectively a no-op but the
 #     lookup table must still be present to match the checkpoint.
 #
 # The three vectors are summed and then normalised with Layer Normalisation
@@ -98,14 +98,14 @@ bert_embeddings <- torch::nn_module(
                                                     config$hidden_size)
 
     # Segment lookup: distinguishes sentence A (ID=0) from sentence B (ID=1).
-    # For single-sentence tasks all IDs are 0 — this embedding still adds a
+    # For single-sentence tasks all IDs are 0  --  this embedding still adds a
     # constant vector but is needed to match the saved checkpoint weights.
     self$token_type_embeddings <- torch::nn_embedding(config$type_vocab_size,
                                                       config$hidden_size)
 
     # Layer Normalisation: re-centres and re-scales each hidden_size-dimensional
     # vector independently.  After summing three embedding tables the values can
-    # have arbitrary scale; LayerNorm brings them back to mean≈0 and std≈1.
+    # have arbitrary scale; LayerNorm brings them back to mean~=0 and std~=1.
     # eps is a small constant added to the variance to avoid dividing by zero.
     self$LayerNorm <- torch::nn_layer_norm(config$hidden_size,
                                            eps = config$layer_norm_eps)
@@ -132,18 +132,18 @@ bert_embeddings <- torch::nn_module(
                                    end    = L - 1 + self$pos_offset,
                                    dtype  = torch::torch_long(),
                                    device = input_ids$device)$
-      unsqueeze(1)$        # shape (L,) → (1, L)
-      expand_as(input_ids) # broadcast to (batch_size, L) — same positions for every sentence
+      unsqueeze(1)$        # shape (L,) -> (1, L)
+      expand_as(input_ids) # broadcast to (batch_size, L)  --  same positions for every sentence
 
     # Segment IDs: all zeros for single-sentence encoding.
     tt_ids <- torch::torch_zeros_like(input_ids)
 
-    # IMPORTANT — R vs Python indexing:
+    # IMPORTANT  --  R vs Python indexing:
     # nn_embedding in R-torch uses 1-based indices (like all of R), while the
     # vocabulary IDs from the tokeniser and the checkpoint's weight rows are
     # 0-based (Python convention).  Internally the storage is identical: the
     # weight matrix rows are in the same order.  Adding +1 at the call site
-    # maps Python row 0 → R index 1, row 1 → index 2, etc., so we access the
+    # maps Python row 0 -> R index 1, row 1 -> index 2, etc., so we access the
     # same underlying vectors.
     x <- self$word_embeddings(input_ids + 1L) +
          self$position_embeddings(pos_ids + 1L) +
@@ -155,7 +155,7 @@ bert_embeddings <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_self_attention — Scaled Dot-Product Multi-Head Attention
+# bert_self_attention  --  Scaled Dot-Product Multi-Head Attention
 #
 # Attention is the central operation in a transformer.  It lets every token
 # "look at" every other token and decide how much to borrow from it.
@@ -164,26 +164,26 @@ bert_embeddings <- torch::nn_module(
 #
 # 1. Three projections
 #    Each token's hidden vector x_i is linearly projected three times:
-#      Q_i = x_i · W_Q   (query — "what am I looking for?")
-#      K_i = x_i · W_K   (key   — "what do I offer?")
-#      V_i = x_i · W_V   (value — "what information do I share?")
+#      Q_i = x_i . W_Q   (query  --  "what am I looking for?")
+#      K_i = x_i . W_K   (key    --  "what do I offer?")
+#      V_i = x_i . W_V   (value  --  "what information do I share?")
 #
 # 2. Attention scores
 #    How much should position i attend to position j?
-#      score(i,j) = Q_i · K_j  / sqrt(head_dim)
+#      score(i,j) = Q_i . K_j  / sqrt(head_dim)
 #    Dividing by sqrt(head_dim) prevents scores from growing too large
 #    (which would push the softmax into a regime where gradients vanish).
 #
 # 3. Masking padding tokens
 #    Padding tokens are dummy entries added to make all sequences in a batch
 #    the same length.  We force their scores to -10,000 so that after softmax
-#    they receive ≈ 0 attention weight and contribute nothing.
+#    they receive ~= 0 attention weight and contribute nothing.
 #
-# 4. Softmax → attention weights
+# 4. Softmax -> attention weights
 #    Converting scores to non-negative weights that sum to 1 across j.
 #
 # 5. Weighted sum of values
-#    out_i = Σ_j  attn(i,j) · V_j
+#    out_i = sum_j  attn(i,j) . V_j
 #
 # MULTI-HEAD TRICK
 # ----------------
@@ -204,7 +204,7 @@ bert_self_attention <- torch::nn_module(
     self$head_dim  <- config$hidden_size %/% config$num_attention_heads  # e.g. 64
 
     # Linear projections for query, key, and value.
-    # Each maps hidden_size → hidden_size (= num_heads × head_dim).
+    # Each maps hidden_size -> hidden_size (= num_heads x head_dim).
     # These are the W_Q, W_K, W_V matrices described above.
     self$query <- torch::nn_linear(config$hidden_size, config$hidden_size)
     self$key   <- torch::nn_linear(config$hidden_size, config$hidden_size)
@@ -213,7 +213,7 @@ bert_self_attention <- torch::nn_module(
 
   forward = function(x, mask) {
     # x    : (batch B, seq_len L, hidden H)
-    # mask : (B, 1, 1, L) additive mask — 0 for real tokens, -1e4 for padding
+    # mask : (B, 1, 1, L) additive mask  --  0 for real tokens, -1e4 for padding
     B <- x$size(1); L <- x$size(2); H <- x$size(3)
 
     # Project and split into heads.
@@ -230,25 +230,25 @@ bert_self_attention <- torch::nn_module(
 
     # Scaled dot-product attention scores.
     # k$transpose(3, 4) swaps the last two dims: (B, num_heads, head_dim, L)
-    # torch_matmul broadcasts over (B, num_heads) and computes (L, head_dim) × (head_dim, L)
+    # torch_matmul broadcasts over (B, num_heads) and computes (L, head_dim) x (head_dim, L)
     # giving scores of shape (B, num_heads, L, L).
     # Dividing by sqrt(head_dim) stabilises gradients (Vaswani et al., 2017).
     scores <- torch::torch_matmul(q, k$transpose(3, 4)) / sqrt(self$head_dim)
 
     # Add the additive mask.  Where mask = -1e4 (padding), scores become very
-    # negative so softmax assigns those positions ≈ 0 weight.
+    # negative so softmax assigns those positions ~= 0 weight.
     scores <- scores + mask
 
-    # Softmax over the last dimension (key positions) → attention weights
+    # Softmax over the last dimension (key positions) -> attention weights
     # that sum to 1 across all key positions for each query position.
     attn <- torch::nnf_softmax(scores, dim = -1)   # (B, num_heads, L, L)
 
     # Weighted sum of value vectors.
-    # (B, num_heads, L, L) × (B, num_heads, L, head_dim) → (B, num_heads, L, head_dim)
+    # (B, num_heads, L, L) x (B, num_heads, L, head_dim) -> (B, num_heads, L, head_dim)
     out <- torch::torch_matmul(attn, v)
 
     # Merge heads: transpose back to (B, L, num_heads, head_dim) then
-    # view() to (B, L, H) where H = num_heads × head_dim.
+    # view() to (B, L, H) where H = num_heads x head_dim.
     # contiguous() ensures the tensor memory is contiguous after the transpose.
     out$transpose(2, 3)$contiguous()$view(c(B, L, H))
   }
@@ -256,12 +256,12 @@ bert_self_attention <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_self_output — Output projection + residual connection + LayerNorm
+# bert_self_output  --  Output projection + residual connection + LayerNorm
 #
 # After the multi-head attention aggregates information from across the
 # sequence, two more operations stabilise training and let gradients flow:
 #
-#   1. Dense projection (hidden → hidden): mixes the attended representations.
+#   1. Dense projection (hidden -> hidden): mixes the attended representations.
 #   2. Residual connection:  output = x + dense(attn_output).
 #      Adding the original input x means the layer only needs to learn
 #      a "correction" on top of what was already there.  This prevents
@@ -290,15 +290,15 @@ bert_self_output <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_attention — Combines bert_self_attention and bert_self_output
+# bert_attention  --  Combines bert_self_attention and bert_self_output
 #
-# This is one complete attention sublayer: Q/K/V → scores → weighted sum →
-# output projection → residual → LayerNorm.
+# This is one complete attention sublayer: Q/K/V -> scores -> weighted sum ->
+# output projection -> residual -> LayerNorm.
 #
 # Note on naming: in R6 / nn_module, `self` is already the module object.
 # Python's `self.self` (the attribute name in BertAttention) is illegal in R,
 # so the submodule is stored as `self$self_` instead.  The weight loader
-# renames keys: "attention.self.query.weight" → "attention.self_.query.weight".
+# renames keys: "attention.self.query.weight" -> "attention.self_.query.weight".
 # -----------------------------------------------------------------------------
 
 #' BERT attention block (self-attention + output projection)
@@ -320,11 +320,11 @@ bert_attention <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_intermediate — Feed-Forward Network, first half: expand to 4× width
+# bert_intermediate  --  Feed-Forward Network, first half: expand to 4x width
 #
 # Each transformer layer contains a two-layer feed-forward network (FFN)
 # applied independently to every token position.  The first half expands
-# the hidden_size to a larger intermediate_size (typically 4× = 3072 for
+# the hidden_size to a larger intermediate_size (typically 4x = 3072 for
 # BERT-base) and applies the GeLU activation function.
 #
 # WHY GeLU?
@@ -334,7 +334,7 @@ bert_attention <- torch::nn_module(
 # to pass with reduced magnitude rather than being zeroed.
 # -----------------------------------------------------------------------------
 
-#' BERT intermediate feed-forward projection (hidden_size → 4×hidden, then GeLU)
+#' BERT intermediate feed-forward projection (hidden_size -> 4xhidden, then GeLU)
 #' @keywords internal
 #' @noRd
 bert_intermediate <- torch::nn_module(
@@ -348,7 +348,7 @@ bert_intermediate <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_output — Feed-Forward Network, second half: project back to hidden_size
+# bert_output  --  Feed-Forward Network, second half: project back to hidden_size
 #
 # Mirrors bert_self_output: projects back down from intermediate_size to
 # hidden_size, adds a residual connection to the attention output, and
@@ -376,17 +376,17 @@ bert_output <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_adapter — Pfeiffer Bottleneck Adapter (used by SPECTER2)
+# bert_adapter  --  Pfeiffer Bottleneck Adapter (used by SPECTER2)
 #
 # Adapters are small modules inserted inside frozen pre-trained layers to
 # enable parameter-efficient fine-tuning (PEFT).  Instead of updating all
 # 110M parameters during fine-tuning, only the adapter weights (typically
 # < 1% of the model) are trained.
 #
-# Architecture (Pfeiffer et al., 2020 — "AdapterFusion"):
+# Architecture (Pfeiffer et al., 2020  --  "AdapterFusion"):
 #
-#   x ──► down-project (H → d) ──► ReLU ──► up-project (d → H) ──► + x
-#                                                                      ▲
+#   x --> down-project (H -> d) --> ReLU --> up-project (d -> H) --> + x
+#                                                                      ^
 #                                                                  skip / residual
 #
 # The bottleneck dimension d = H / reduction_factor (typically d = 48 for
@@ -416,7 +416,7 @@ bert_adapter <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_layer — One complete transformer block
+# bert_layer  --  One complete transformer block
 #
 # A BERT encoder is a stack of N identical layers.  Each layer has two
 # sublayers (each with their own LayerNorm + residual):
@@ -426,7 +426,7 @@ bert_adapter <- torch::nn_module(
 #
 # Schematically for a single token position:
 #
-#   x_in ──► attention sublayer ──► a ──► FFN sublayer ──► x_out
+#   x_in --> attention sublayer --> a --> FFN sublayer --> x_out
 #
 # An optional adapter can be grafted on after the FFN (used by SPECTER2).
 # -----------------------------------------------------------------------------
@@ -444,7 +444,7 @@ bert_layer <- torch::nn_module(
   },
   forward = function(x, mask) {
     a <- self$attention(x, mask)      # attention: contextualise each token
-    i <- self$intermediate(a)         # FFN expand: (B, L, H) → (B, L, 4H)
+    i <- self$intermediate(a)         # FFN expand: (B, L, H) -> (B, L, 4H)
     h <- self$output(i, a)            # FFN contract: back to (B, L, H) + residual
 
     # Apply Pfeiffer adapter if one was injected (SPECTER2 only).
@@ -455,7 +455,7 @@ bert_layer <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_encoder — Stack of N transformer layers
+# bert_encoder  --  Stack of N transformer layers
 #
 # Simply applies each bert_layer in sequence.  The hidden states flow from
 # layer 0 (shallowest, closest to raw token embeddings) to layer N-1
@@ -489,7 +489,7 @@ bert_encoder <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_model — The complete BERT encoder
+# bert_model  --  The complete BERT encoder
 #
 # Combines embeddings and the encoder stack.  Also converts the binary
 # attention mask (1 = real token, 0 = padding) into an *additive* mask that
@@ -497,7 +497,7 @@ bert_encoder <- torch::nn_module(
 #
 # WHY AN ADDITIVE MASK?
 # The attention score for padding positions is set to -10,000 before softmax.
-# Because exp(-10000) ≈ 0, padding tokens receive essentially zero attention
+# Because exp(-10000) ~= 0, padding tokens receive essentially zero attention
 # weight and their value vectors contribute nothing to the output.  Critically,
 # an additive mask is differentiable (unlike a hard Boolean mask), which
 # matters during pre-training.
@@ -529,7 +529,7 @@ bert_model <- torch::nn_module(
 
 
 # =============================================================================
-# MPNet ARCHITECTURE  (Song et al., 2020 — arXiv:2004.09297)
+# MPNet ARCHITECTURE  (Song et al., 2020  --  arXiv:2004.09297)
 #
 # WHAT MAKES MPNET DIFFERENT FROM BERT?
 # --------------------------------------
@@ -544,7 +544,7 @@ bert_model <- torch::nn_module(
 #
 #  2. POSITION IDs START AT 2 (same as RoBERTa)
 #     Index 0 and 1 are reserved (padding_idx = 1).  Sequence positions are
-#     2, 3, 4, …, L+1.
+#     2, 3, 4, ..., L+1.
 #
 #  3. RELATIVE POSITION BIAS (the key architectural innovation)
 #     BERT encodes position absolutely: each position gets its own learned
@@ -563,9 +563,9 @@ bert_model <- torch::nn_module(
 # WEIGHT KEY NAMING
 # -----------------
 # HuggingFace MPNet uses different attribute names than BERT:
-#   attention.self.query  →  attention.attn.q
-#   attention.self.key    →  attention.attn.k
-#   attention.self.value  →  attention.attn.v
+#   attention.self.query  ->  attention.attn.q
+#   attention.self.key    ->  attention.attn.k
+#   attention.self.value  ->  attention.attn.v
 # Plus a new "o" (output projection) and "r" (position key, pre-training only).
 # The LayerNorm lives at attention.LayerNorm (not attention.output.LayerNorm).
 # Our R hierarchy mirrors these Python names exactly so weight loading is
@@ -574,7 +574,7 @@ bert_model <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# mpnet_embeddings — Word + absolute-position embeddings, no token-type
+# mpnet_embeddings  --  Word + absolute-position embeddings, no token-type
 # -----------------------------------------------------------------------------
 
 #' MPNet input embedding layer (word + position, then LayerNorm; no token type)
@@ -595,7 +595,7 @@ mpnet_embeddings <- torch::nn_module(
     # Layer Normalisation applied after summing word + position embeddings.
     self$LayerNorm           <- torch::nn_layer_norm(config$hidden_size,
                                                      eps = config$layer_norm_eps)
-    # Note: no token_type_embeddings — MPNet is always single-segment.
+    # Note: no token_type_embeddings  --  MPNet is always single-segment.
   },
 
   forward = function(input_ids) {
@@ -603,7 +603,7 @@ mpnet_embeddings <- torch::nn_module(
 
     # MPNet position IDs start at 2 (padding_idx = 1, same as RoBERTa).
     # torch_arange in R-torch is inclusive on both ends, so
-    # arange(start=2, end=L+1) produces exactly L values: [2, 3, …, L+1].
+    # arange(start=2, end=L+1) produces exactly L values: [2, 3, ..., L+1].
     pos_ids <- torch::torch_arange(
       start  = 2L,
       end    = L + 1L,
@@ -621,20 +621,20 @@ mpnet_embeddings <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# .mpnet_position_bucket — Convert relative distances to bucket indices
+# .mpnet_position_bucket  --  Convert relative distances to bucket indices
 #
 # MPNet uses 32 buckets to represent relative token distances.  The first
 # 16 buckets cover negative relative positions (token j is to the LEFT of i),
 # and the last 16 cover positive (token j is to the RIGHT of i).
 #
-# Within each half, the first 8 buckets are exact (distance 0, 1, 2, …, 7),
+# Within each half, the first 8 buckets are exact (distance 0, 1, 2, ..., 7),
 # and the remaining 8 cover logarithmically wider ranges up to max_distance
 # = 128.  Log-scale bucketing means the model distinguishes nearby tokens
 # precisely but treats very distant tokens as "just far away", which is
 # sufficient in practice.
 #
-# For a sequence of length L, the input is an (L × L) integer tensor where
-# entry [i, j] = j − i  (positive = rightward, negative = leftward).
+# For a sequence of length L, the input is an (L x L) integer tensor where
+# entry [i, j] = j - i  (positive = rightward, negative = leftward).
 #
 # EXAMPLE for L=4:
 #   relative positions:       buckets:
@@ -658,7 +658,7 @@ mpnet_embeddings <- torch::nn_module(
 
   # Tokens to the RIGHT of i (n < 0, i.e. relative_position > 0) go into the
   # upper half of buckets (16..31).  We set the base offset accordingly.
-  # (n < 0)$to(torch_long()) converts the boolean mask to 0/1, then × nb adds
+  # (n < 0)$to(torch_long()) converts the boolean mask to 0/1, then x nb adds
   # 16 for rightward positions and 0 for leftward.
   ret <- (n < 0L)$to(dtype = torch::torch_long()) * nb
 
@@ -686,14 +686,14 @@ mpnet_embeddings <- torch::nn_module(
   val_large <- val_large$clamp(max = nb - 1L)
 
   # Combine: use the exact distance for "small" positions, log bucket for large.
-  # torch_where selects element-wise: is_small → n, else → val_large.
+  # torch_where selects element-wise: is_small -> n, else -> val_large.
   # Then add the half-offset stored in ret.
   ret + torch::torch_where(is_small, n, val_large)
 }
 
 
 # -----------------------------------------------------------------------------
-# mpnet_self_attention — Q/K/V attention with relative position bias
+# mpnet_self_attention  --  Q/K/V attention with relative position bias
 #
 # Very similar to bert_self_attention with two differences:
 #
@@ -718,7 +718,7 @@ mpnet_self_attention <- torch::nn_module(
     self$num_heads <- config$num_attention_heads
     self$head_dim  <- as.integer(config$hidden_size / config$num_attention_heads)
 
-    # Query, key, value projection matrices — same role as in BERT but with
+    # Query, key, value projection matrices  --  same role as in BERT but with
     # shorter names (q/k/v) to match the HuggingFace checkpoint keys.
     self$q <- torch::nn_linear(config$hidden_size, config$hidden_size)
     self$k <- torch::nn_linear(config$hidden_size, config$hidden_size)
@@ -736,7 +736,7 @@ mpnet_self_attention <- torch::nn_module(
   },
 
   forward = function(x, mask, position_bias) {
-    # position_bias : (1, num_heads, L, L) — computed once by mpnet_encoder
+    # position_bias : (1, num_heads, L, L)  --  computed once by mpnet_encoder
     B <- x$size(1); L <- x$size(2)
 
     # Project and reshape exactly as in bert_self_attention.
@@ -759,14 +759,14 @@ mpnet_self_attention <- torch::nn_module(
     out  <- torch::torch_matmul(attn, v)   # (B, num_heads, L, head_dim)
 
     # Merge heads back to (B, L, hidden_size).
-    # Note: self$o is NOT applied here — it is called by mpnet_attention below.
+    # Note: self$o is NOT applied here  --  it is called by mpnet_attention below.
     out$transpose(2L, 3L)$contiguous()$view(c(B, L, self$num_heads * self$head_dim))
   }
 )
 
 
 # -----------------------------------------------------------------------------
-# mpnet_attention — Output projection + residual + LayerNorm
+# mpnet_attention  --  Output projection + residual + LayerNorm
 #
 # In HuggingFace's MPNet, the output projection (self.attn.o) is applied
 # inside MPNetAttention rather than inside MPNetSelfAttention.  This is an
@@ -775,7 +775,7 @@ mpnet_self_attention <- torch::nn_module(
 # correct.
 #
 # The LayerNorm here sits at "attention.LayerNorm" (not "attention.output.
-# LayerNorm" as in BERT) — another naming difference handled by our hierarchy.
+# LayerNorm" as in BERT)  --  another naming difference handled by our hierarchy.
 # -----------------------------------------------------------------------------
 
 #' MPNet attention block (self-attention + o projection + residual + LayerNorm)
@@ -803,7 +803,7 @@ mpnet_attention <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# mpnet_layer — One complete MPNet transformer block
+# mpnet_layer  --  One complete MPNet transformer block
 #
 # Identical structure to bert_layer except:
 #  - The attention sublayer is mpnet_attention (which takes position_bias).
@@ -820,26 +820,26 @@ mpnet_layer <- torch::nn_module(
   initialize = function(config) {
     self$attention    <- mpnet_attention(config)
 
-    # The feed-forward network (expand → GeLU → contract → residual → LayerNorm)
+    # The feed-forward network (expand -> GeLU -> contract -> residual -> LayerNorm)
     # has the same structure and weight key names as in BERT, so we reuse these.
     self$intermediate <- bert_intermediate(config)
     self$output       <- bert_output(config)
   },
   forward = function(x, mask, position_bias) {
     a <- self$attention(x, mask, position_bias)   # attention sublayer
-    i <- self$intermediate(a)                      # FFN expand to 4× width
+    i <- self$intermediate(a)                      # FFN expand to 4x width
     self$output(i, a)                              # FFN contract + residual
   }
 )
 
 
 # -----------------------------------------------------------------------------
-# mpnet_encoder — Layer stack + shared relative position bias
+# mpnet_encoder  --  Layer stack + shared relative position bias
 #
 # Two responsibilities beyond bert_encoder:
 #
-#  1. Owns the relative_attention_bias embedding table (32 × num_heads).
-#     A single table is shared by all transformer layers — every layer sees
+#  1. Owns the relative_attention_bias embedding table (32 x num_heads).
+#     A single table is shared by all transformer layers  --  every layer sees
 #     the same position signal, which keeps parameter count low.
 #
 #  2. Calls compute_position_bias() ONCE before the layer loop, then passes
@@ -871,7 +871,7 @@ mpnet_encoder <- torch::nn_module(
 
   forward = function(x, mask) {
     # Compute position bias once for the current sequence length and reuse
-    # across all layers — this is an efficiency choice, not a correctness
+    # across all layers  --  this is an efficiency choice, not a correctness
     # requirement.
     bias <- self$compute_position_bias(x)   # (1, num_heads, L, L)
 
@@ -885,15 +885,15 @@ mpnet_encoder <- torch::nn_module(
     L      <- x$size(2)    # current sequence length
     device <- x$device
 
-    # Build an (L,) integer tensor of 0-based sequence positions [0, 1, …, L-1].
+    # Build an (L,) integer tensor of 0-based sequence positions [0, 1, ..., L-1].
     # We want relative distances, not absolute positions, so the actual values
-    # do not matter — only differences between them do.
+    # do not matter  --  only differences between them do.
     idx <- torch::torch_arange(start = 0L, end = L - 1L,
                                dtype = torch::torch_long(), device = device)
 
-    # Outer difference matrix: rel[i, j] = j − i  (shape L × L).
-    # unsqueeze(1L) turns (L,) into (1, L)  — the "memory" (key) positions.
-    # unsqueeze(2L) turns (L,) into (L, 1)  — the "context" (query) positions.
+    # Outer difference matrix: rel[i, j] = j - i  (shape L x L).
+    # unsqueeze(1L) turns (L,) into (1, L)   --  the "memory" (key) positions.
+    # unsqueeze(2L) turns (L,) into (L, 1)   --  the "context" (query) positions.
     # Broadcasting the subtraction gives the full (L, L) relative position matrix.
     rel <- idx$unsqueeze(1L) - idx$unsqueeze(2L)
 
@@ -915,7 +915,7 @@ mpnet_encoder <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# mpnet_model — Complete MPNet encoder
+# mpnet_model  --  Complete MPNet encoder
 #
 # Structurally identical to bert_model: convert the binary attention mask
 # to an additive mask, run through embeddings, then through the encoder stack.
@@ -935,7 +935,7 @@ mpnet_model <- torch::nn_module(
   },
   forward = function(input_ids, attention_mask) {
     # Convert binary mask (1 = real, 0 = padding) to additive scores mask.
-    # Same logic as bert_model: real tokens → 0, padding → −10,000.
+    # Same logic as bert_model: real tokens -> 0, padding -> -10,000.
     ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
       unsqueeze(2L)$unsqueeze(2L) * -1e4
 
@@ -950,7 +950,7 @@ mpnet_model <- torch::nn_module(
 #
 # Fine-tuned models add a small "head" on top of the BERT/RoBERTa backbone to
 # map contextualised hidden states to task outputs (sentiment labels, NER tags,
-# VAD regression scores, …).  The backbone weights are identical to those used
+# VAD regression scores, ...).  The backbone weights are identical to those used
 # for embedding; only the head is new.
 #
 # WHY TWO DIFFERENT HEAD DESIGNS?
@@ -961,13 +961,13 @@ mpnet_model <- torch::nn_module(
 #
 # RoBERTa (and XLM-RoBERTa, CamemBERT) uses a slightly different head called
 # RobertaClassificationHead: it skips the separate pooler and instead applies
-# dropout → dense → tanh → dropout → out_proj directly on the [CLS] vector.
+# dropout -> dense -> tanh -> dropout -> out_proj directly on the [CLS] vector.
 # The weight key names differ too (classifier.dense / classifier.out_proj vs.
 # pooler.dense / classifier).
 #
 # For token classification (NER, POS tagging), ALL architectures use the same
 # head: a single linear layer applied to every token position independently.
-# The label set (e.g. B-PER, I-PER, O, …) is read from config.json's id2label.
+# The label set (e.g. B-PER, I-PER, O, ...) is read from config.json's id2label.
 #
 # WEIGHT KEY MAPPING
 # ------------------
@@ -976,26 +976,26 @@ mpnet_model <- torch::nn_module(
 # by .normalize_key() in weight_loading.R:
 #
 #   BertForSequenceClassification:
-#     bert.embeddings.*  →  embeddings.*
-#     bert.encoder.*     →  encoder.*
-#     bert.pooler.*      →  pooler.*       (bert_pooler below)
-#     classifier.*       →  classifier.*
+#     bert.embeddings.*  ->  embeddings.*
+#     bert.encoder.*     ->  encoder.*
+#     bert.pooler.*      ->  pooler.*       (bert_pooler below)
+#     classifier.*       ->  classifier.*
 #
 #   RobertaForSequenceClassification / XLMRobertaForSequenceClassification:
-#     roberta.embeddings.*          →  embeddings.*
-#     roberta.encoder.*             →  encoder.*
-#     classifier.dense.*            →  classifier.dense.*
-#     classifier.out_proj.*         →  classifier.out_proj.*
+#     roberta.embeddings.*          ->  embeddings.*
+#     roberta.encoder.*             ->  encoder.*
+#     classifier.dense.*            ->  classifier.dense.*
+#     classifier.out_proj.*         ->  classifier.out_proj.*
 #
 #   BertForTokenClassification / RobertaForTokenClassification:
-#     bert./roberta.embeddings.*    →  embeddings.*
-#     bert./roberta.encoder.*       →  encoder.*
-#     classifier.*                  →  classifier.*
+#     bert./roberta.embeddings.*    ->  embeddings.*
+#     bert./roberta.encoder.*       ->  encoder.*
+#     classifier.*                  ->  classifier.*
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
-# bert_pooler — CLS-token pooler used by BertForSequenceClassification
+# bert_pooler  --  CLS-token pooler used by BertForSequenceClassification
 #
 # During BERT pre-training the [CLS] token is used for next-sentence prediction.
 # Fine-tuned classifiers read the same token's hidden state, pass it through a
@@ -1005,13 +1005,13 @@ mpnet_model <- torch::nn_module(
 # Weight keys: pooler.dense.weight / pooler.dense.bias
 # -----------------------------------------------------------------------------
 
-#' BERT CLS-token pooler (dense + tanh on the [CLS] hidden state)
+#' BERT CLS-token pooler (dense + tanh on the CLS hidden state)
 #' @keywords internal
 #' @noRd
 bert_pooler <- torch::nn_module(
   "BertPooler",
   initialize = function(config) {
-    # Projects the CLS hidden state: hidden_size → hidden_size.
+    # Projects the CLS hidden state: hidden_size -> hidden_size.
     self$dense <- torch::nn_linear(config$hidden_size, config$hidden_size)
   },
   forward = function(hidden_states) {
@@ -1023,12 +1023,12 @@ bert_pooler <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# roberta_classification_head — RoBERTa's built-in classification head
+# roberta_classification_head  --  RoBERTa's built-in classification head
 #
 # Unlike BERT's separate pooler, RoBERTa packs everything into one module:
-# CLS extract → dropout → dense → tanh → dropout → out_proj.
+# CLS extract -> dropout -> dense -> tanh -> dropout -> out_proj.
 # In eval() mode dropout is a no-op, so the effective path is:
-#   CLS → dense → tanh → out_proj.
+#   CLS -> dense -> tanh -> out_proj.
 #
 # Weight keys: classifier.dense.* / classifier.out_proj.*
 # -----------------------------------------------------------------------------
@@ -1055,7 +1055,7 @@ roberta_classification_head <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_for_classification — Complete BERT sequence classifier
+# bert_for_classification  --  Complete BERT sequence classifier
 #
 # Flat structure: embeddings + encoder + pooler + classifier all live at the
 # same level so that checkpoint keys (after stripping "bert.") map directly
@@ -1071,7 +1071,7 @@ bert_for_classification <- torch::nn_module(
     dp <- config$hidden_dropout_prob %||% config$classifier_dropout %||% 0.1
     self$embeddings <- bert_embeddings(config)
     self$encoder    <- bert_encoder(config)
-    self$pooler     <- bert_pooler(config)          # CLS → dense → tanh
+    self$pooler     <- bert_pooler(config)          # CLS -> dense -> tanh
     self$dropout    <- torch::nn_dropout(p = dp)
     self$classifier <- torch::nn_linear(config$hidden_size, config$num_labels)
   },
@@ -1080,7 +1080,7 @@ bert_for_classification <- torch::nn_module(
       unsqueeze(2)$unsqueeze(2) * -1e4      # (B, 1, 1, L): 0 real, -1e4 pad
     x <- self$embeddings(input_ids)          # (B, L, H)
     x <- self$encoder(x, ext)               # (B, L, H)
-    x <- self$pooler(x)                     # (B, H)  — extracts + transforms CLS
+    x <- self$pooler(x)                     # (B, H)   --  extracts + transforms CLS
     x <- self$dropout(x)                    # no-op at eval time
     self$classifier(x)                      # (B, num_labels) raw logits
   }
@@ -1088,11 +1088,11 @@ bert_for_classification <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# roberta_for_classification — Complete RoBERTa sequence classifier
+# roberta_for_classification  --  Complete RoBERTa sequence classifier
 #
 # Same flat structure as bert_for_classification but uses roberta_classification_
 # head (which has no separate pooler).  Mirrors RobertaForSequenceClassification
-# and XLMRobertaForSequenceClassification — both use attribute name "roberta"
+# and XLMRobertaForSequenceClassification  --  both use attribute name "roberta"
 # for the backbone, so ".normalize_key() strips "roberta." from checkpoint keys.
 # -----------------------------------------------------------------------------
 
@@ -1117,7 +1117,7 @@ roberta_for_classification <- torch::nn_module(
 
 
 # -----------------------------------------------------------------------------
-# bert_for_token_classification — Token-level classifier (NER, POS, etc.)
+# bert_for_token_classification  --  Token-level classifier (NER, POS, etc.)
 #
 # Unlike sequence classifiers that reduce to one vector per sentence, token
 # classifiers keep the full (B, L, H) output and apply a linear layer to
@@ -1147,6 +1147,6 @@ bert_for_token_classification <- torch::nn_module(
     x <- self$embeddings(input_ids)    # (B, L, H)
     x <- self$encoder(x, ext)          # (B, L, H)
     x <- self$dropout(x)               # no-op at eval time
-    self$classifier(x)                 # (B, L, num_labels) — one dist. per token
+    self$classifier(x)                 # (B, L, num_labels)  --  one dist. per token
   }
 )

@@ -33,3 +33,12 @@ Produces an interactive Plotly line chart showing how the relative frequency
 of each topic changes across timestamps.  Hovering over a point shows the
 topic's top words at that time.
 }
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+  years <- as.Date(paste0(sample(2015:2023, length(abstracts), replace = TRUE), "-01-01"))
+  tot  <- topics_over_time(fit, timestamps = years)
+  visualize_topics_over_time(tot, fit = fit)
+}
+}

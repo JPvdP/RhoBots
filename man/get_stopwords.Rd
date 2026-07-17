@@ -16,3 +16,6 @@ A character vector of stopwords.
 Currently only \code{"english"} is supported; returns an empty character
 vector for any other value.
 }
+\examples{
+get_stopwords("english")
+}

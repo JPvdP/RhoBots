@@ -22,3 +22,11 @@ Same as \code{\link{predict.bertopic_fit}}.
 Wraps \code{\link{predict.bertopic_fit}}; see that function for full
 parameter documentation.
 }
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+  pred <- transform_bertopic(fit, new_docs = c("new document"), encoder = enc)
+  pred$topics
+}
+}

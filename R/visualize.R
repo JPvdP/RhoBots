@@ -1,5 +1,5 @@
 # =============================================================================
-# visualize.R — Interactive visualizations for bertopic_fit objects.
+# visualize.R  --  Interactive visualizations for bertopic_fit objects.
 # =============================================================================
 
 # Short display label for any topic label format.
@@ -14,31 +14,10 @@
     text  <- paste(words[seq_len(min(n_words, length(words)))], collapse = " ")
   }
   if (nchar(text) > max_chars)
-    text <- paste0(substr(text, 1L, max_chars - 1L), "…")
+    text <- paste0(substr(text, 1L, max_chars - 1L), "...")
   text
 }
 
-#' Visualise documents in topic space
-#'
-#' Produces an interactive 2-D scatter plot (via \pkg{plotly}) with one point
-#' per document, coloured by topic.  Topic centroids are annotated with short
-#' labels.
-#'
-#' @param fit A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.
-#' @param dims Either \code{NULL} (default) to use the pre-computed 2-D UMAP
-#'   layout stored in \code{fit$layout2d}, or an integer vector of length 2
-#'   selecting columns from \code{fit$reduced}, e.g. \code{c(1, 3)} to plot
-#'   dimension 1 against dimension 3 of the clustering UMAP space.
-#' @param label_topics Whether to annotate topic centroids with short labels
-#'   (default \code{TRUE}).
-#' @param n_label_words Number of topic words to show in centroid annotations
-#'   (default 3).
-#' @param point_size Marker size for document points (default 5).
-#' @param noise_color Hex colour for unassigned (\code{-1}) documents
-#'   (default \code{"#cccccc"}).
-#' @param width,height Plot dimensions in pixels (defaults: 900 x 700).
-#' @return A \code{plotly} figure object.
-#' @export
 #' Bar charts of top terms per topic
 #'
 #' Produces a grid of horizontal bar charts (via \pkg{plotly}), one panel per
@@ -53,6 +32,12 @@
 #' @param width,height Plot dimensions in pixels.  Auto-scaled to the grid
 #'   size when \code{NULL}.
 #' @return A \code{plotly} figure object.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   visualize_barchart(fit, top_n = 5L)
+#' }
 #' @export
 visualize_barchart <- function(fit,
                                 topics = NULL,
@@ -139,6 +124,25 @@ visualize_barchart <- function(fit,
 
 #' Visualise documents in topic space
 #'
+#' Produces an interactive 2-D scatter plot (via \pkg{plotly}) with one point
+#' per document, coloured by topic.
+#'
+#' @param fit A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.
+#' @param dims Either \code{NULL} to use the stored 2-D UMAP layout, or a
+#'   length-2 integer vector selecting columns from \code{fit$reduced}.
+#' @param label_topics Annotate topic centroids with short labels (default
+#'   \code{TRUE}).
+#' @param max_label_chars Truncate centroid labels to this many characters.
+#' @param point_size Marker size (default 5).
+#' @param noise_color Hex colour for noise documents (default \code{"#cccccc"}).
+#' @param width,height Plot dimensions in pixels (defaults: 900 x 700).
+#' @return A \code{plotly} figure object, or \code{NULL} if no topics were found.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   visualize_topics(fit)
+#' }
 #' @export
 visualize_topics <- function(fit,
                               dims            = NULL,
@@ -268,13 +272,13 @@ visualize_topics <- function(fit,
 #' \code{topic_quality} object returned by \code{\link{topic_quality}}.
 #' The panels are:
 #' \enumerate{
-#'   \item \strong{Silhouette per topic} — horizontal bars coloured from red
+#'   \item \strong{Silhouette per topic}  --  horizontal bars coloured from red
 #'     (negative) through yellow (zero) to green (positive).
-#'   \item \strong{Topic size distribution} — document counts per topic, with
+#'   \item \strong{Topic size distribution}  --  document counts per topic, with
 #'     the noise class shown separately.
-#'   \item \strong{Centroid similarity} — pairwise cosine similarity matrix
+#'   \item \strong{Centroid similarity}  --  pairwise cosine similarity matrix
 #'     between topic centroids (lower = more distinct).
-#'   \item \strong{Vocabulary overlap} — pairwise Jaccard similarity of the
+#'   \item \strong{Vocabulary overlap}  --  pairwise Jaccard similarity of the
 #'     top-\eqn{N} c-TF-IDF term sets (lower = less overlap).
 #' }
 #'
@@ -282,6 +286,13 @@ visualize_topics <- function(fit,
 #' @param fit Optional \code{bertopic_fit} used to resolve short topic labels.
 #'   When \code{NULL} topics are labelled \code{T0}, \code{T1}, etc.
 #' @param width,height Plot dimensions in pixels (defaults: 900 x 750).
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   q   <- topic_quality(fit)
+#'   visualize_quality(q, fit = fit)
+#' }
 #' @return A \code{plotly} figure object.
 #' @export
 visualize_quality <- function(q, fit = NULL, width = 900L, height = 750L) {
@@ -372,13 +383,13 @@ visualize_quality <- function(q, fit = NULL, width = 900L, height = 750L) {
   # --- Panel 3: Centroid similarity -------------------------------------------
   sim_mat <- q$separation$centroid_similarity[t_chr, t_chr, drop = FALSE]
   p_sim   <- .heatmap(sim_mat,
-                      "<b>Centroid similarity</b>  (↓ better)",
+                      "<b>Centroid similarity</b>  (lower is better)",
                       "Cosine sim")
 
   # --- Panel 4: Jaccard overlap -----------------------------------------------
   jac_mat <- q$overlap$jaccard_matrix[t_chr, t_chr, drop = FALSE]
   p_jac   <- .heatmap(jac_mat,
-                      "<b>Vocabulary overlap</b>  (↓ better)",
+                      "<b>Vocabulary overlap</b>  (lower is better)",
                       "Jaccard")
 
   # --- Combine ----------------------------------------------------------------

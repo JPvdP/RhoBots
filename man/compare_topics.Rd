@@ -32,7 +32,7 @@ A list of class \code{compare_topics_result} with elements:
 \item{\code{result}}{Tidy data frame with columns \code{Topic},
 \code{Name}, \code{Group}, \code{Observed}, \code{Expected},
 \code{Stat}.}
-\item{\code{table}}{Raw contingency table (topics × groups).}
+\item{\code{table}}{Raw contingency table (topics x groups).}
 \item{\code{global_statistic}, \code{global_pvalue}}{Global chi-square
 statistic and p-value (\code{NA} when \code{method = "log_ratio"}).}
 }
@@ -52,6 +52,15 @@ negative = under-represented.  A global chi-square test is also reported.}
 \item{\code{"log_ratio"}}{Laplace-smoothed log\eqn{_2} ratio of observed
 to expected proportion.  Values above 1 mean the topic is twice as
 prevalent in that group as expected; below -1 means half as prevalent.}
+}
+}
+\examples{
+\dontrun{
+  enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit    <- fit_bertopic(docs = abstracts, encoder = enc)
+  groups <- sample(c("A", "B"), length(abstracts), replace = TRUE)
+  comp   <- compare_topics(fit, groups)
+  visualize_comparison(comp)
 }
 }
 \seealso{

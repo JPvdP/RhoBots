@@ -1,5 +1,5 @@
 # =============================================================================
-# classify.R — Text classification and token labeling (NER) with fine-tuned
+# classify.R  --  Text classification and token labeling (NER) with fine-tuned
 # BERT-family models from HuggingFace.
 #
 # OVERVIEW
@@ -8,22 +8,22 @@
 # embedding models.  The difference is a small "head" on top that maps the
 # final hidden states to task outputs:
 #
-#   load_hf_classifier()  —  download config + weights, build the right model
-#   classify_texts()      —  run inference, return a data.frame of predictions
+#   load_hf_classifier()   --   download config + weights, build the right model
+#   classify_texts()       --   run inference, return a data.frame of predictions
 #
 # THREE OUTPUT MODES (determined by problem_type in config.json)
 # ---------------------------------------------------------------
 #   single_label_classification:
-#     softmax over logits → one label + probability per input text.
+#     softmax over logits -> one label + probability per input text.
 #     Example output: data.frame(text, label, score, negative, neutral, positive)
 #
 #   multi_label_classification:
-#     sigmoid per label (each label is independent) → probability per label.
-#     Example output: data.frame(text, toxic, severe_toxic, obscene, …)
+#     sigmoid per label (each label is independent) -> probability per label.
+#     Example output: data.frame(text, toxic, severe_toxic, obscene, ...)
 #
 #   regression:
-#     raw logits without any activation → continuous scores.
-#     Example: VAD model → data.frame(text, valence, arousal, dominance)
+#     raw logits without any activation -> continuous scores.
+#     Example: VAD model -> data.frame(text, valence, arousal, dominance)
 #
 # TOKEN LABELING (NER, POS, chunking)
 # ------------------------------------
@@ -49,13 +49,13 @@
 #'
 #' The task type and output format are auto-detected from `config.json`:
 #' \itemize{
-#'   \item `architectures` containing `"ForTokenClassification"` → NER mode
-#'   \item `problem_type = "regression"` → return raw numeric scores
-#'   \item `problem_type = "multi_label_classification"` → sigmoid per label
-#'   \item otherwise → softmax single-label classification
+#'   \item `architectures` containing `"ForTokenClassification"` -> NER mode
+#'   \item `problem_type = "regression"` -> return raw numeric scores
+#'   \item `problem_type = "multi_label_classification"` -> sigmoid per label
+#'   \item otherwise -> softmax single-label classification
 #' }
 #'
-#' Supported backbone architectures: the same as [load_hf_bert()] — BERT,
+#' Supported backbone architectures: the same as [load_hf_bert()]  --  BERT,
 #' RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT (backbone only), MPNet.
 #'
 #' @param repo_id HuggingFace repo ID, e.g. `"cardiffnlp/twitter-xlm-roberta-base-sentiment"`
@@ -95,7 +95,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
       stop("Please install.packages(\"", pkg, "\")")
   }
 
-  # ── config ──────────────────────────────────────────────────────────────────
+  # -- config ------------------------------------------------------------------
   cfg_path   <- hfhub::hub_download(repo_id, "config.json")
   cfg_raw    <- jsonlite::fromJSON(cfg_path)
   model_type <- cfg_raw$model_type %||% "bert"
@@ -106,7 +106,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
     stop("'", repo_id, "' has model_type '", model_type, "', not supported.\n",
          "Supported: ", paste(.supported, collapse = ", "))
 
-  # id2label maps integer index (as character "0", "1", …) to label name.
+  # id2label maps integer index (as character "0", "1", ...) to label name.
   # unlist() flattens the parsed JSON list to a named character vector.
   id2label <- if (!is.null(cfg_raw$id2label)) unlist(cfg_raw$id2label) else NULL
 
@@ -118,7 +118,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
   problem_type <- cfg_raw$problem_type %||% "single_label_classification"
 
   # Detect task from the architectures list:
-  # "BertForTokenClassification", "RobertaForTokenClassification", etc. → NER
+  # "BertForTokenClassification", "RobertaForTokenClassification", etc. -> NER
   archs <- cfg_raw$architectures %||% character(0)
   task  <- if (any(grepl("TokenClassification", archs))) "ner" else "classification"
 
@@ -141,7 +141,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
     relative_attention_num_buckets = cfg_raw$relative_attention_num_buckets %||% 32L
   )
 
-  # ── weights ─────────────────────────────────────────────────────────────────
+  # -- weights -----------------------------------------------------------------
   if (!is.null(weights_path)) {
     if (!file.exists(weights_path))
       stop("Local weights_path does not exist: ", weights_path)
@@ -161,24 +161,24 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
            ". Tried model.safetensors and pytorch_model.bin.")
   }
 
-  # ── build model ─────────────────────────────────────────────────────────────
-  # Dispatch on task × model_type to pick the right head architecture.
+  # -- build model -------------------------------------------------------------
+  # Dispatch on task x model_type to pick the right head architecture.
   model <- if (task == "ner") {
-    # Token classification head is identical for BERT and RoBERTa —
+    # Token classification head is identical for BERT and RoBERTa  -- 
     # both store "classifier.*" at the top level of the checkpoint.
     bert_for_token_classification(cfg)
   } else if (model_type %in% c("roberta", "xlm-roberta", "camembert")) {
     # RoBERTa-family uses its own head (no separate pooler).
     roberta_for_classification(cfg)
   } else {
-    # BERT, DistilBERT, MPNet-like → BERT-style head with pooler.
+    # BERT, DistilBERT, MPNet-like -> BERT-style head with pooler.
     bert_for_classification(cfg)
   }
 
   load_bert_weights(model, weights_path, strict = FALSE)
   model$eval()
 
-  # ── tokenizer ───────────────────────────────────────────────────────────────
+  # -- tokenizer ---------------------------------------------------------------
   tokenizer <- tryCatch({
     tok::tokenizer$from_pretrained(repo_id)
   }, error = function(e) {
@@ -212,6 +212,12 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
 #' Print method for hf_classifier objects
 #' @param x An hf_classifier object.
 #' @param ... Unused.
+#' @return Invisibly returns \code{x}.
+#' @examples
+#' \dontrun{
+#'   cls <- load_hf_classifier("cardiffnlp/twitter-roberta-base-sentiment-latest")
+#'   print(cls)
+#' }
 #' @export
 print.hf_classifier <- function(x, ...) {
   cat("<hf_classifier>\n")
@@ -233,7 +239,7 @@ print.hf_classifier <- function(x, ...) {
 
 
 # =============================================================================
-# classify_texts — S3 generic + methods
+# classify_texts  --  S3 generic + methods
 # =============================================================================
 
 #' Classify or label texts with a fine-tuned BERT-family model
@@ -241,7 +247,7 @@ print.hf_classifier <- function(x, ...) {
 #' S3 generic that dispatches on the classifier class returned by
 #' [load_hf_classifier()].
 #'
-#' **Sequence classification** (sentiment, topic, …): returns a `data.frame`
+#' **Sequence classification** (sentiment, topic, ...): returns a `data.frame`
 #' with columns `text`, `label`, `score`, plus one probability column per
 #' label.  For `problem_type = "regression"` the label columns contain raw
 #' numeric scores.  For `problem_type = "multi_label_classification"` each
@@ -364,7 +370,7 @@ classify_texts.default <- function(classifier, texts, ...) {
 # Internal post-processing helpers
 # =============================================================================
 
-# .softmax — numerically stable row-wise softmax
+# .softmax  --  numerically stable row-wise softmax
 .softmax <- function(mat) {
   # Subtract row max before exp() to prevent overflow (result is identical).
   mat <- mat - apply(mat, 1, max)
@@ -372,18 +378,18 @@ classify_texts.default <- function(classifier, texts, ...) {
   e / rowSums(e)
 }
 
-# .sigmoid — element-wise sigmoid (for multi-label)
+# .sigmoid  --  element-wise sigmoid (for multi-label)
 .sigmoid <- function(x) 1 / (1 + exp(-x))
 
 
 # .process_seq_classification
 #
-# Converts raw logit matrix (n_texts × num_labels) to a user-friendly
+# Converts raw logit matrix (n_texts x num_labels) to a user-friendly
 # data.frame.  Output format depends on problem_type.
 .process_seq_classification <- function(logits, texts, id2label, problem_type) {
 
-  # Build label name vector from id2label (keys are "0", "1", … as strings).
-  # If id2label is missing, fall back to generic "LABEL_0", "LABEL_1", … names.
+  # Build label name vector from id2label (keys are "0", "1", ... as strings).
+  # If id2label is missing, fall back to generic "LABEL_0", "LABEL_1", ... names.
   nl <- ncol(logits)
   label_names <- if (!is.null(id2label)) {
     unname(id2label[as.character(seq(0, nl - 1))])
@@ -393,7 +399,7 @@ classify_texts.default <- function(classifier, texts, ...) {
 
   if (problem_type == "regression") {
     # Regression: return raw continuous scores (e.g. VAD dimensions).
-    # No activation function — just expose the raw linear outputs.
+    # No activation function  --  just expose the raw linear outputs.
     df           <- as.data.frame(logits)
     colnames(df) <- label_names
     df$text      <- texts
@@ -401,7 +407,7 @@ classify_texts.default <- function(classifier, texts, ...) {
   }
 
   if (problem_type == "multi_label_classification") {
-    # Each label is an independent binary decision → sigmoid per cell.
+    # Each label is an independent binary decision -> sigmoid per cell.
     probs        <- .sigmoid(logits)
     df           <- as.data.frame(probs)
     colnames(df) <- label_names
@@ -409,11 +415,11 @@ classify_texts.default <- function(classifier, texts, ...) {
     return(df[, c("text", label_names), drop = FALSE])
   }
 
-  # Default: single_label_classification → softmax, then argmax.
-  probs    <- .softmax(logits)             # (n, num_labels) — rows sum to 1
+  # Default: single_label_classification -> softmax, then argmax.
+  probs    <- .softmax(logits)             # (n, num_labels)  --  rows sum to 1
   best_idx <- apply(probs, 1, which.max)  # 1-based R index of winning class
 
-  # Map 1-based R index to 0-based Python id2label key ("0", "1", …).
+  # Map 1-based R index to 0-based Python id2label key ("0", "1", ...).
   labels <- label_names[best_idx]
   scores <- apply(probs, 1, max)
 
@@ -469,7 +475,7 @@ classify_texts.default <- function(classifier, texts, ...) {
       # Get token strings from the tokenizer Encoding.
       tokens <- enc[[i]]$tokens[real_pos]
 
-      # Exclude special delimiter tokens — these are not real words.
+      # Exclude special delimiter tokens  --  these are not real words.
       keep   <- !tokens %in% .SPECIAL_TOKENS
       tokens <- tokens[keep]
       probs  <- tok_probs[real_pos[keep], , drop = FALSE]

@@ -17,10 +17,17 @@ A data frame with columns:
 \describe{
 \item{\code{Topic}}{Integer topic ID (\code{-1} = noise/unassigned).}
 \item{\code{Count}}{Number of documents assigned to this topic.}
-\item{\code{Name}}{Auto-generated label (e.g. \code{"0_model_data_…"}).}
+\item{\code{Name}}{Auto-generated label (e.g. \code{"0_model_data_..."}).}
 \item{\code{Representation}}{Top-5 terms, comma-separated.}
 }
 }
 \description{
 Get topic-level metadata as a data frame
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  get_topic_info(fit)
+}
 }

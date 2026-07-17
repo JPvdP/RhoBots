@@ -11,6 +11,16 @@ print_topics(fit, max_topics = 20)
 
 \item{max_topics}{Maximum number of topics to display.}
 }
+\value{
+Called for its side effect (printing); returns \code{NULL} invisibly.
+}
 \description{
 Pretty-print discovered topics
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  print_topics(fit)
+}
 }

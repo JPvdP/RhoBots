@@ -19,3 +19,10 @@ A data frame with one row per document and columns
 \description{
 Get document-level topic assignments as a data frame
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  get_document_info(fit)
+}
+}

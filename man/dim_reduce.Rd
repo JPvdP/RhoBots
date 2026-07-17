@@ -22,3 +22,11 @@ A list with \code{$embedding} (reduced matrix) and \code{$model}
 \description{
 Fit a dimensionality-reduction model and return the reduced matrix
 }
+\examples{
+\dontrun{
+  m   <- umap_reduction(n_neighbors = 5L, n_components = 2L)
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb <- embed_texts(enc, c("first doc", "second doc", "third doc"))
+  res <- dim_reduce(m, emb)
+}
+}

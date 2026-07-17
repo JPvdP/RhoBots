@@ -43,6 +43,8 @@
 #'
 #' @param language Language name (default \code{"english"}).
 #' @return A character vector of stopwords.
+#' @examples
+#' get_stopwords("english")
 #' @export
 get_stopwords <- function(language = "english") {
   if (identical(tolower(language), "english")) return(.english_stopwords)
@@ -82,6 +84,9 @@ get_stopwords <- function(language = "english") {
 #'   or tabular file.  Defaults to the first column.
 #' @return A deduplicated character vector of stopwords (lowercased and
 #'   whitespace-trimmed).
+#' @examples
+#' load_stopwords(c("foo", "bar", "baz"))
+#' load_stopwords(data.frame(word = c("foo", "bar")), column = "word")
 #' @export
 load_stopwords <- function(source, column = NULL) {
   words <- if (is.data.frame(source)) {

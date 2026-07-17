@@ -14,9 +14,9 @@ load_openai_embedder(
 \arguments{
 \item{model}{OpenAI embedding model name.
 \itemize{
-\item \code{"text-embedding-3-small"} (default) — 1536-d, fast and cheap
-\item \code{"text-embedding-3-large"} — 3072-d, highest quality
-\item \code{"text-embedding-ada-002"} — legacy 1536-d model
+\item \code{"text-embedding-3-small"} (default)  --  1536-d, fast and cheap
+\item \code{"text-embedding-3-large"}  --  3072-d, highest quality
+\item \code{"text-embedding-ada-002"}  --  legacy 1536-d model
 }}
 
 \item{api_key}{API key.  Defaults to \code{Sys.getenv("OPENAI_API_KEY")}.}

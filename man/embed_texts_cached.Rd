@@ -49,3 +49,10 @@ subsequent calls the cached matrix is read directly, making it free to
 experiment with different dimensionality-reduction or clustering settings
 without re-running the expensive forward passes.
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  docs <- c("First document.", "Second document.", "Third document.")
+  emb  <- embed_texts_cached(enc, docs, cache_file = tempfile(fileext = ".rds"))
+}
+}

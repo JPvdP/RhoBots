@@ -28,3 +28,9 @@ Treats each cluster as one big document and ranks terms by class TF
 multiplied by a class-based inverse document frequency.  This is the
 BERTopic-flavoured TF-IDF that produces interpretable topic descriptors.
 }
+\examples{
+docs <- c("the cat sat on mat", "a dog chased cat",
+          "machine learning models", "deep learning neural nets")
+dtm  <- build_dtm(docs, min_df = 1L)
+c_tf_idf(dtm, cluster_ids = c(0L, 0L, 1L, 1L), top_n = 3L)
+}

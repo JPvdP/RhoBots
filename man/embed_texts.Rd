@@ -28,7 +28,8 @@ embed_texts(encoder, texts, ...)
   prefix = NULL,
   chunk_strategy = c("truncate", "mean", "first"),
   chunk_overlap = 0L,
-  verbose = interactive()
+  verbose = interactive(),
+  ...
 )
 }
 \arguments{
@@ -48,6 +49,8 @@ similarity equals dot product.}
 even when the encoder has a stored prefix.}
 
 \item{verbose}{If \code{TRUE}, prints batch progress.}
+
+\item{...}{Not used; retained for S3 method compatibility.}
 
 \item{max_length}{Truncate/chunk token sequences to this length (including
 special tokens).  Capped at the model's \code{max_position_embeddings}.}
@@ -103,16 +106,16 @@ consecutive windows (default 0).
 }
 \examples{
 \dontrun{
-  # General model — no prefix needed
+  # General model  --  no prefix needed
   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
   emb <- embed_texts(enc, c("First sentence.", "Second sentence."))
 
-  # BGE model — set prefix at load time (applied automatically)
+  # BGE model  --  set prefix at load time (applied automatically)
   enc <- load_hf_bert("BAAI/bge-base-en-v1.5",
                        prefix = "Represent this sentence: ")
   emb <- embed_texts(enc, docs)
 
-  # E5 model — passage prefix for documents, query prefix for queries
+  # E5 model  --  passage prefix for documents, query prefix for queries
   enc <- load_hf_bert("intfloat/e5-base-v2", prefix = "passage: ")
   doc_emb   <- embed_texts(enc, docs)
   query_emb <- embed_texts(enc, queries, prefix = "query: ")

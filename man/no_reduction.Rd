@@ -14,3 +14,6 @@ Passes the raw embeddings directly to the clustering step.  Useful when
 the embeddings are already low-dimensional or when you want to cluster in
 the original space.
 }
+\examples{
+m <- no_reduction()
+}

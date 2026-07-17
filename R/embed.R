@@ -1,5 +1,5 @@
 # =============================================================================
-# embed.R — Convert a loaded encoder + a character vector into a numeric matrix
+# embed.R  --  Convert a loaded encoder + a character vector into a numeric matrix
 #
 # WHAT THIS FILE DOES
 # -------------------
@@ -7,21 +7,21 @@
 # this file handle the actual inference pipeline:
 #
 #   texts (character vector)
-#     │
-#     ▼
-#   tokenizer  → integer token IDs + attention mask
-#     │
-#     ▼
-#   model forward pass  → hidden states (B, L, hidden_size)
-#     │
-#     ▼
-#   pooling  → one vector per sentence  (B, hidden_size)
-#     │
-#     ▼
-#   L2 normalisation  → unit-norm rows  (B, hidden_size)
-#     │
-#     ▼
-#   numeric matrix  (n_texts × hidden_size)
+#     |
+#     v
+#   tokenizer  -> integer token IDs + attention mask
+#     |
+#     v
+#   model forward pass  -> hidden states (B, L, hidden_size)
+#     |
+#     v
+#   pooling  -> one vector per sentence  (B, hidden_size)
+#     |
+#     v
+#   L2 normalisation  -> unit-norm rows  (B, hidden_size)
+#     |
+#     v
+#   numeric matrix  (n_texts x hidden_size)
 #
 # The embed_texts() function is an S3 generic: calling it on a bert_encoder
 # dispatches to embed_texts.bert_encoder(), and on an api_embedder to
@@ -35,21 +35,21 @@
 # BERT processes every token individually.  After the final transformer layer,
 # each token has its own hidden-state vector of shape (hidden_size,).  To get
 # ONE vector representing the whole sentence we average ("pool") the token
-# vectors — but we must exclude padding tokens, which are artificial fillers
+# vectors  --  but we must exclude padding tokens, which are artificial fillers
 # added to make all sequences in a batch the same length.
 #
 # HOW IT WORKS:
 #
-#   Step 1 — convert the attention mask to float and add a trailing dimension:
-#             shape (B, L) → (B, L, 1), so it broadcasts against (B, L, H).
+#   Step 1  --  convert the attention mask to float and add a trailing dimension:
+#             shape (B, L) -> (B, L, 1), so it broadcasts against (B, L, H).
 #
-#   Step 2 — mask hidden states: multiply hidden * mask.
+#   Step 2  --  mask hidden states: multiply hidden * mask.
 #             Padding positions (mask=0) become zero vectors.
 #             Real token positions (mask=1) are unchanged.
 #
-#   Step 3 — sum along the sequence dimension (dim 2) → (B, H).
+#   Step 3  --  sum along the sequence dimension (dim 2) -> (B, H).
 #
-#   Step 4 — divide by the number of real tokens per row.
+#   Step 4  --  divide by the number of real tokens per row.
 #             clamp(min=1e-9) avoids division by zero if a row is all padding
 #             (extremely rare but possible with empty strings).
 #
@@ -67,6 +67,17 @@
 #' @param attention_mask An integer `torch_tensor` of shape `(batch, seq_len)`
 #'   with 1 for real tokens and 0 for padding.
 #' @return A 2-D `torch_tensor` of shape `(batch, hidden)`.
+#' @examples
+#' \dontrun{
+#'   enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   tokens <- enc$tokenizer$encode_batch(c("hello world"))
+#'   ids    <- torch::torch_tensor(matrix(tokens[[1L]]$ids, nrow = 1L),
+#'                                  dtype = torch::torch_long())
+#'   mask   <- torch::torch_tensor(matrix(tokens[[1L]]$attention_mask, nrow = 1L),
+#'                                  dtype = torch::torch_long())
+#'   hidden <- enc$model(ids, mask)
+#'   mean_pool(hidden, mask)
+#' }
 #' @export
 mean_pool <- function(hidden, attention_mask) {
   # Expand mask to (B, L, 1) for broadcasting against (B, L, H)
@@ -78,7 +89,7 @@ mean_pool <- function(hidden, attention_mask) {
   # Count of real tokens per sentence (avoid /0 with clamp)
   d <- m$sum(dim = 2)$clamp(min = 1e-9)
 
-  s / d   # element-wise division: (B, H) / (B, 1) → (B, H)
+  s / d   # element-wise division: (B, H) / (B, 1) -> (B, H)
 }
 
 
@@ -95,7 +106,7 @@ mean_pool <- function(hidden, attention_mask) {
 # (using R's 1-based indexing), returning shape (B, H).
 # -----------------------------------------------------------------------------
 
-#' CLS-token pooling: extract the [CLS] hidden state as the sentence vector
+#' CLS-token pooling: extract the CLS hidden state as the sentence vector
 #'
 #' Returns the first token's hidden state `(B, H)` from a `(B, L, H)` tensor.
 #' Used for models whose `1_Pooling/config.json` sets
@@ -103,6 +114,17 @@ mean_pool <- function(hidden, attention_mask) {
 #'
 #' @param hidden A 3-D `torch_tensor` of shape `(batch, seq_len, hidden)`.
 #' @return A 2-D `torch_tensor` of shape `(batch, hidden)`.
+#' @examples
+#' \dontrun{
+#'   enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   tokens <- enc$tokenizer$encode_batch(c("hello world"))
+#'   ids    <- torch::torch_tensor(matrix(tokens[[1L]]$ids, nrow = 1L),
+#'                                  dtype = torch::torch_long())
+#'   mask   <- torch::torch_tensor(matrix(tokens[[1L]]$attention_mask, nrow = 1L),
+#'                                  dtype = torch::torch_long())
+#'   hidden <- enc$model(ids, mask)
+#'   cls_pool(hidden)
+#' }
 #' @export
 cls_pool <- function(hidden) {
   hidden$select(2L, 1L)   # select position 1 (= [CLS]) along the sequence dim
@@ -110,12 +132,12 @@ cls_pool <- function(hidden) {
 
 
 # -----------------------------------------------------------------------------
-# embed_texts — S3 generic
+# embed_texts  --  S3 generic
 #
 # Using R's S3 dispatch system, calling embed_texts(encoder, texts) routes to:
 #   embed_texts.bert_encoder   for models loaded with load_hf_bert() / load_specter2()
 #   embed_texts.api_embedder   for API-backed models (OpenAI, Cohere)
-#   embed_texts.default        for anything else — produces a helpful error
+#   embed_texts.default        for anything else  --  produces a helpful error
 #
 # This means users always call the same function regardless of encoder type,
 # which is the core idea of object-oriented dispatch.
@@ -177,20 +199,21 @@ cls_pool <- function(hidden) {
 #' @param chunk_overlap Number of token overlap between consecutive windows
 #'   when `chunk_strategy != "truncate"`. Default 0.
 #' @param verbose If `TRUE`, prints batch progress.
+#' @param ... Not used; retained for S3 method compatibility.
 #' @return A numeric matrix with `length(texts)` rows and `hidden_size` cols.
 #' @export
 #' @examples
 #' \dontrun{
-#'   # General model — no prefix needed
+#'   # General model  --  no prefix needed
 #'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
 #'   emb <- embed_texts(enc, c("First sentence.", "Second sentence."))
 #'
-#'   # BGE model — set prefix at load time (applied automatically)
+#'   # BGE model  --  set prefix at load time (applied automatically)
 #'   enc <- load_hf_bert("BAAI/bge-base-en-v1.5",
 #'                        prefix = "Represent this sentence: ")
 #'   emb <- embed_texts(enc, docs)
 #'
-#'   # E5 model — passage prefix for documents, query prefix for queries
+#'   # E5 model  --  passage prefix for documents, query prefix for queries
 #'   enc <- load_hf_bert("intfloat/e5-base-v2", prefix = "passage: ")
 #'   doc_emb   <- embed_texts(enc, docs)
 #'   query_emb <- embed_texts(enc, queries, prefix = "query: ")
@@ -208,44 +231,44 @@ embed_texts <- function(encoder, texts, ...) UseMethod("embed_texts")
 
 
 # -----------------------------------------------------------------------------
-# embed_texts.bert_encoder — Main inference loop for local models
+# embed_texts.bert_encoder  --  Main inference loop for local models
 #
 # OVERVIEW OF STEPS (for the default "truncate" strategy):
 #
-#  1. Prepend prefix  — instruction-tuned models like BGE or E5 require a
+#  1. Prepend prefix   --  instruction-tuned models like BGE or E5 require a
 #     short phrase before each text to signal the embedding task.
 #
-#  2. Set up tokenizer  — enable padding (so all texts in a batch get the
+#  2. Set up tokenizer   --  enable padding (so all texts in a batch get the
 #     same length) and truncation (so no text exceeds max_length tokens).
 #
-#  3. Batch loop  — process texts in chunks of batch_size to control memory.
+#  3. Batch loop   --  process texts in chunks of batch_size to control memory.
 #     Within each batch:
 #
-#     a. Tokenize  — the tok package returns a list of Encoding objects, each
+#     a. Tokenize   --  the tok package returns a list of Encoding objects, each
 #        carrying:
 #          $ids           : integer vector of token IDs
 #          $attention_mask: 1 for real tokens, 0 for padding
 #
-#     b. Build matrices  — pad every sequence to Lmax (the longest in this
+#     b. Build matrices   --  pad every sequence to Lmax (the longest in this
 #        batch) by appending 0s.  Stack rows into an integer matrix.
 #
-#     c. Convert to tensors  — wrap the R matrices as torch_long() tensors
+#     c. Convert to tensors   --  wrap the R matrices as torch_long() tensors
 #        and move them to the chosen device (CPU or GPU).
 #
-#     d. Forward pass  — run through the model architecture defined in
+#     d. Forward pass   --  run through the model architecture defined in
 #        architecture.R.  Output shape: (batch_size, Lmax, hidden_size).
 #
-#     e. Pool  — collapse the sequence dimension:
+#     e. Pool   --  collapse the sequence dimension:
 #          mean pool : weighted average over non-padding tokens
 #          CLS pool  : extract the first token's hidden state
 #
-#     f. L2 normalise  — scale each row vector to unit length.  After
+#     f. L2 normalise   --  scale each row vector to unit length.  After
 #        normalisation, cosine_similarity(a, b) = dot(a, b), making
 #        similarity comparisons very cheap (just matrix multiplication).
 #
-#     g. Back to R  — convert the GPU tensor to a standard R numeric array.
+#     g. Back to R   --  convert the GPU tensor to a standard R numeric array.
 #
-#  4. Stack rows  — do.call(rbind, ...) assembles all batches into one matrix.
+#  4. Stack rows   --  do.call(rbind, ...) assembles all batches into one matrix.
 # -----------------------------------------------------------------------------
 
 #' @rdname embed_texts
@@ -258,7 +281,8 @@ embed_texts.bert_encoder <- function(encoder, texts,
                                       prefix         = NULL,
                                       chunk_strategy = c("truncate", "mean", "first"),
                                       chunk_overlap  = 0L,
-                                      verbose        = interactive()) {
+                                      verbose        = interactive(),
+                                      ...) {
   chunk_strategy <- match.arg(chunk_strategy)
 
   # Resolve the prefix: explicit argument beats encoder-stored value.
@@ -293,7 +317,7 @@ embed_texts.bert_encoder <- function(encoder, texts,
   restore_idx  <- order(order_idx)
   texts_sorted <- texts[order_idx]
 
-  # Pre-allocate the result matrix — avoids repeated rbind across batches.
+  # Pre-allocate the result matrix  --  avoids repeated rbind across batches.
   # hidden_size is not known until after the first forward pass, so we fill it in then.
   result     <- NULL
   hidden_size <- NULL
@@ -385,7 +409,7 @@ embed_texts.default <- function(encoder, texts, ...) {
   model$eval()
   model$to(device = device)
 
-  # Tokenize with the model's absolute maximum — essentially "no truncation"
+  # Tokenize with the model's absolute maximum  --  essentially "no truncation"
   # for any document that fits within the positional embedding range.
   model_max <- encoder$config$max_position_embeddings %||% 512L
   tokenizer$enable_padding()
@@ -404,7 +428,7 @@ embed_texts.default <- function(encoder, texts, ...) {
     n_toks <- length(ids)
 
     if (n_toks <= max_length) {
-      # Document fits in one chunk — use as-is.
+      # Document fits in one chunk  --  use as-is.
       chunk_ids    <- c(chunk_ids,    list(ids))
       chunk_masks  <- c(chunk_masks,  list(all_enc[[i]]$attention_mask))
       chunk_origin <- c(chunk_origin, i)
@@ -417,12 +441,12 @@ embed_texts.default <- function(encoder, texts, ...) {
       # The "body" is everything between [CLS] and [SEP].
       body <- ids[seq(2L, n_toks - 1L)]
 
-      # Each chunk window holds (max_length − 2) body tokens, leaving 2 slots
+      # Each chunk window holds (max_length - 2) body tokens, leaving 2 slots
       # for re-attaching [CLS] and [SEP].
       body_size <- max_length - 2L
 
       # stride controls how many tokens the window advances each step.
-      # stride = body_size − overlap means consecutive chunks share `overlap`
+      # stride = body_size - overlap means consecutive chunks share `overlap`
       # tokens at their boundary.  stride must be at least 1.
       stride <- max(1L, body_size - overlap)
 
@@ -490,7 +514,7 @@ embed_texts.default <- function(encoder, texts, ...) {
     cidx_i <- which(chunk_origin == i)
 
     if (length(cidx_i) == 1L) {
-      # Single chunk: just copy directly — colMeans on one row has overhead.
+      # Single chunk: just copy directly  --  colMeans on one row has overhead.
       result[i, ] <- all_chunk_emb[cidx_i, ]
     } else {
       # Multiple chunks: average their embedding vectors.
@@ -507,5 +531,5 @@ embed_texts.default <- function(encoder, texts, ...) {
     result         <- result / norms
   }
 
-  result   # (n_texts × hidden_size) numeric matrix
+  result   # (n_texts x hidden_size) numeric matrix
 }

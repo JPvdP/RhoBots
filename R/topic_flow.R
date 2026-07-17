@@ -1,5 +1,5 @@
 # =============================================================================
-# topic_flow.R — Longitudinal topic tracking across time periods.
+# topic_flow.R  --  Longitudinal topic tracking across time periods.
 #
 # fit_topics_over_time()   Run independent BERTopic models per period and
 #                          align topics across adjacent periods by centroid
@@ -88,6 +88,14 @@
 #'       \code{period}, \code{topic}, \code{label}, \code{count},
 #'       \code{status}.}
 #'   }
+#' @examples
+#' \dontrun{
+#'   enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   period <- rep(c("2010s", "2020s"), each = 50L)
+#'   flow   <- fit_topics_over_time(enc, docs = abstracts,
+#'                                   period_var = period)
+#'   visualize_topic_flow(flow)
+#' }
 #' @export
 fit_topics_over_time <- function(encoder,
                                   docs,
@@ -117,7 +125,7 @@ fit_topics_over_time <- function(encoder,
       if (verbose) message("Period '", p, "': ", ndoc, " documents")
 
       if (ndoc < 2L) {
-        warning("Period '", p, "' has fewer than 2 documents — skipping.")
+        warning("Period '", p, "' has fewer than 2 documents  --  skipping.")
         return(NULL)
       }
 
@@ -156,7 +164,7 @@ fit_topics_over_time <- function(encoder,
 
     cent_f  <- fit_from$topic_centroids[as.character(t_from), , drop = FALSE]
     cent_t  <- fit_to$topic_centroids[as.character(t_to),   , drop = FALSE]
-    sim_mat <- cent_f %*% t(cent_t)         # topic_from × topic_to
+    sim_mat <- cent_f %*% t(cent_t)         # topic_from x topic_to
 
     links <- which(sim_mat >= min_similarity, arr.ind = TRUE)
     if (nrow(links) == 0L) return(NULL)
@@ -214,15 +222,23 @@ fit_topics_over_time <- function(encoder,
 #' Print method for bertopic_flow objects
 #' @param x A \code{bertopic_flow} object.
 #' @param ... Unused.
+#' @return Invisibly returns \code{x}.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   flow <- fit_topics_over_time(enc, docs = abstracts,
+#'                                period_var = rep(c("A", "B"), each = 50L))
+#'   print(flow)
+#' }
 #' @export
 print.bertopic_flow <- function(x, ...) {
   cat("<bertopic_flow>\n")
-  cat("  periods:    ", paste(x$periods, collapse = " → "), "\n")
+  cat("  periods:    ", paste(x$periods, collapse = " -> "), "\n")
   cat("  models:     ", length(x$fits), "\n")
   total_topics <- if (!is.null(x$topic_info)) nrow(x$topic_info) else 0L
   cat("  topics:     ", total_topics, "across all periods\n")
   total_links  <- if (!is.null(x$transitions)) nrow(x$transitions) else 0L
-  cat("  links:      ", total_links, "(similarity ≥ threshold)\n")
+  cat("  links:      ", total_links, "(similarity >= threshold)\n")
   if (!is.null(x$topic_info)) {
     tbl <- sort(table(x$topic_info$status), decreasing = TRUE)
     cat("  status:     ",
@@ -240,7 +256,7 @@ print.bertopic_flow <- function(x, ...) {
 #' Produces an interactive Plotly Sankey diagram where each column represents
 #' one time period, each node is a topic (sized by document count), and each
 #' link is a cross-period topic similarity above the fitted threshold.
-#' Link thickness scales with \code{similarity × min(count_from, count_to)}.
+#' Link thickness scales with \code{similarity x min(count_from, count_to)}.
 #'
 #' @param flow A \code{bertopic_flow} object from
 #'   \code{\link{fit_topics_over_time}}.
@@ -250,6 +266,13 @@ print.bertopic_flow <- function(x, ...) {
 #'   a hue) or \code{"status"} (nodes coloured by lifecycle status).
 #' @param width,height Plot dimensions in pixels.
 #' @return A \code{plotly} figure.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   flow <- fit_topics_over_time(enc, docs = abstracts,
+#'                                period_var = rep(c("A", "B"), each = 50L))
+#'   visualize_topic_flow(flow)
+#' }
 #' @export
 visualize_topic_flow <- function(flow,
                                   periods   = NULL,

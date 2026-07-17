@@ -26,7 +26,7 @@ A list of class \code{topic_coherence} with elements:
 \description{
 Measures how often the top terms of each topic co-occur in the same
 documents.  High coherence means the words form a semantically tight
-cluster — they appear together rather than in isolation.
+cluster  --  they appear together rather than in isolation.
 }
 \details{
 Two measures are supported:
@@ -39,6 +39,13 @@ is excellent.}
 \item{\code{"cv"}}{The C\eqn{_V} coherence measure, a log-conditional
 variant that is slightly more discriminative on small corpora.  Higher
 is better; typical range \code{-4} to \code{0}.}
+}
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  topic_coherence(fit)
 }
 }
 \seealso{

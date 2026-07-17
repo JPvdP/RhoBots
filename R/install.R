@@ -1,5 +1,5 @@
 # =============================================================================
-# install.R — One-time setup helper for Rhobots dependencies.
+# install.R  --  One-time setup helper for Rhobots dependencies.
 # =============================================================================
 
 #' Set up Rhobots system dependencies
@@ -25,6 +25,10 @@
 #'   appears to be working (default `FALSE`).  Use this when torch loads but
 #'   produces unexpected errors.
 #' @return Invisible `NULL`.
+#' @examples
+#' \dontrun{
+#'   rhobots_install()
+#' }
 #' @export
 rhobots_install <- function(reinstall = FALSE) {
   if (!requireNamespace("torch", quietly = TRUE))

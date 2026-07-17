@@ -20,3 +20,10 @@ topic IDs (character strings, including \code{"-1"} for noise).
 \description{
 Get all topic-term representations
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  get_topics(fit, top_n = 5L)
+}
+}

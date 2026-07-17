@@ -11,6 +11,15 @@
 
 \item{...}{Unused.}
 }
+\value{
+Invisibly returns \code{x}.
+}
 \description{
 Print method for hf_classifier objects
+}
+\examples{
+\dontrun{
+  cls <- load_hf_classifier("cardiffnlp/twitter-roberta-base-sentiment-latest")
+  print(cls)
+}
 }

@@ -1,5 +1,5 @@
 # =============================================================================
-# zero_shot.R — Confirmatory topic modeling without unsupervised clustering.
+# zero_shot.R  --  Confirmatory topic modeling without unsupervised clustering.
 #
 # The user supplies topic labels + descriptions; each document is assigned to
 # the most similar label by cosine similarity in embedding space.
@@ -35,12 +35,22 @@
 #' @param ngram_range Integer vector \code{c(min, max)} for n-gram extraction
 #'   in the c-TF-IDF step (default \code{c(1L, 2L)}).
 #' @param top_n_terms Number of c-TF-IDF terms stored per topic (default 10).
-#' @param extra_stopwords Additional stopwords — character vector, file path,
+#' @param extra_stopwords Additional stopwords  --  character vector, file path,
 #'   or data frame (same formats accepted by \code{\link{fit_bertopic}}).
 #' @param verbose Print progress messages (default \code{TRUE}).
 #' @return A \code{bertopic_fit} object.  The extra field
 #'   \code{$label_names} records the original user-supplied label names.
 #' @seealso \code{\link{fit_bertopic}}, \code{\link{guided_fit_bertopic}}
+#' @examples
+#' \dontrun{
+#'   enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   labels <- c(
+#'     "Climate change" = "carbon emissions global warming climate",
+#'     "Machine learning" = "neural network deep learning model training"
+#'   )
+#'   fit <- zero_shot_topics(abstracts, labels = labels, encoder = enc)
+#'   get_topic_info(fit)
+#' }
 #' @export
 zero_shot_topics <- function(docs,
                               labels,

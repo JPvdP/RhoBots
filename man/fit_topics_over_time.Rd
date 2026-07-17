@@ -66,3 +66,12 @@ From that graph each topic is labelled:
 \item{\code{isolated}}{No links in either direction.}
 }
 }
+\examples{
+\dontrun{
+  enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  period <- rep(c("2010s", "2020s"), each = 50L)
+  flow   <- fit_topics_over_time(enc, docs = abstracts,
+                                  period_var = period)
+  visualize_topic_flow(flow)
+}
+}

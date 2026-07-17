@@ -21,3 +21,13 @@ model).
 \description{
 Fit a clustering model and return cluster labels
 }
+\examples{
+\dontrun{
+  m   <- hdbscan_clustering(min_pts = 3L)
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb <- embed_texts(enc, c("cats and dogs", "machine learning",
+                             "pets and animals", "neural networks"))
+  res <- cluster_docs(m, emb)
+  res$labels
+}
+}

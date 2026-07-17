@@ -11,6 +11,16 @@
 
 \item{...}{Unused.}
 }
+\value{
+Invisibly returns \code{x}.
+}
 \description{
 Print method for bertopic_fit objects
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  print(fit)
+}
 }

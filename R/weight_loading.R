@@ -1,5 +1,5 @@
 # =============================================================================
-# weight_loading.R — Read BERT weights from safetensors or pickle files into
+# weight_loading.R  --  Read BERT weights from safetensors or pickle files into
 # an already-constructed bert_model.  Handles HuggingFace naming conventions
 # (prefix stripping, head-key filtering, R6 `self` rename).
 # =============================================================================
@@ -38,7 +38,7 @@
   }
 
   stop(
-    "Downloaded weights file is too small (", sz, " bytes) — likely corrupted or an error page:\n  ",
+    "Downloaded weights file is too small (", sz, " bytes)  --  likely corrupted or an error page:\n  ",
     path,
     "\nDelete the cached file and retry, optionally with a HuggingFace token:\n",
     "  Sys.setenv(HUGGING_FACE_HUB_TOKEN = \"hf_...\")"
@@ -100,9 +100,9 @@
 #' @keywords internal
 #' @noRd
 .normalize_key <- function(key) {
-  # "roberta." covers RobertaFor*, XLMRobertaFor*, CamembertFor* — all three store
+  # "roberta." covers RobertaFor*, XLMRobertaFor*, CamembertFor*  --  all three store
   # the backbone under the Python attribute name "roberta", so checkpoint keys
-  # look like "roberta.encoder.layer.0.attention…" regardless of the model variant.
+  # look like "roberta.encoder.layer.0.attention..." regardless of the model variant.
   for (pfx in c("bert.", "roberta.", "mpnet.", "model.", "0.auto_model.", "auto_model.")) {
     if (startsWith(key, pfx)) key <- substring(key, nchar(pfx) + 1)
   }
@@ -121,16 +121,23 @@
 #' keys we don't need (`pooler.*`, `cls.*`, `lm_head.*`, ...), and applies
 #' the result via `model$load_state_dict()`.
 #'
-#' Most users don't call this directly — it's invoked by [load_hf_bert()].
+#' Most users don't call this directly  --  it's invoked by [load_hf_bert()].
 #' Exposed for users who construct a model manually or want to load
 #' alternative weight files.
 #'
 #' @param model A `bert_model` instance (or compatible nn_module).
 #' @param weights_path Path to a `.safetensors` or `.bin` file.
 #' @param strict If TRUE, errors when expected parameters are missing.  If
-#'   FALSE, just warns.  Default FALSE — most checkpoints have a handful of
+#'   FALSE, just warns.  Default FALSE  --  most checkpoints have a handful of
 #'   extra task-head keys that are correctly ignored.
 #' @return Invisibly, the named list of loaded weights.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   # load_bert_weights() is called internally by load_hf_bert() and
+#'   # load_specter2(); advanced users can call it directly when injecting
+#'   # custom weights into an existing model object.
+#' }
 #' @export
 load_bert_weights <- function(model, weights_path, strict = FALSE) {
   weights <- tryCatch(

@@ -9,7 +9,7 @@ save_embeddings(embeddings, path)
 \arguments{
 \item{embeddings}{A numeric matrix (rows = documents, columns = dimensions).}
 
-\item{path}{File path.  Use a \code{.rds} extension (recommended — lossless,
+\item{path}{File path.  Use a \code{.rds} extension (recommended  --  lossless,
 fast) or \code{.csv} (portable but larger and slower).  If no extension is
 given, \code{.rds} is appended automatically.}
 }
@@ -18,4 +18,11 @@ The resolved file path, invisibly.
 }
 \description{
 Save an embedding matrix to disk
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb <- embed_texts(enc, c("doc one", "doc two"))
+  save_embeddings(emb, tempfile(fileext = ".rds"))
+}
 }

@@ -11,6 +11,15 @@
 
 \item{...}{Unused.}
 }
+\value{
+Invisibly returns \code{x}.
+}
 \description{
 Print method for bert_encoder objects
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  print(enc)
+}
 }

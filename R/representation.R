@@ -1,5 +1,5 @@
 # =============================================================================
-# representation.R — Post-fit topic representation models.
+# representation.R  --  Post-fit topic representation models.
 #
 # apply_mmr()  Maximal Marginal Relevance: re-ranks topic terms to balance
 #              relevance to the topic with diversity across selected terms.
@@ -49,6 +49,13 @@
 #' @param verbose Print progress messages (default \code{TRUE}).
 #' @return An updated \code{bertopic_fit} with \code{topic_terms} and
 #'   \code{topic_labels} replaced by the MMR-selected representation.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   fit <- apply_mmr(fit, encoder = enc, diversity = 0.3)
+#'   get_topic(fit, 0L)
+#' }
 #' @export
 apply_mmr <- function(fit,
                        encoder,
@@ -92,7 +99,7 @@ apply_mmr <- function(fit,
   # topic_ref_strings: for each topic we create a "topic reference" by
   # concatenating all candidate terms into one string, then embed it.
   # WHY? The encoder turns this bag-of-words string into a vector that sits
-  # near the centroid of those terms in embedding space — a cheap proxy for
+  # near the centroid of those terms in embedding space  --  a cheap proxy for
   # "what this topic is about".  MMR uses this vector as the relevance target.
   topic_ref_strings <- vapply(
     as.character(topics_nonnoise),
@@ -123,27 +130,27 @@ apply_mmr <- function(fit,
   all_emb_n <- all_emb / norms
 
   # Split the normalised matrix into term embeddings and topic embeddings.
-  # term_emb:  n_unique_terms × hidden_size  (one row per unique candidate term)
-  # topic_emb: n_topics       × hidden_size  (one row per topic reference)
+  # term_emb:  n_unique_terms x hidden_size  (one row per unique candidate term)
+  # topic_emb: n_topics       x hidden_size  (one row per topic reference)
   term_emb  <- all_emb_n[seq_len(n_terms), , drop = FALSE]
   topic_emb <- all_emb_n[n_terms + seq_len(n_topics), , drop = FALSE]
 
-  # term_idx maps each term string → its row position in term_emb.
+  # term_idx maps each term string -> its row position in term_emb.
   # We use this to look up embeddings by name when building cand_emb below.
   term_idx  <- stats::setNames(seq_len(n_terms), all_unique_terms)
 
   # --- 3. Greedy MMR selection, one topic at a time -----------------------
   # For each topic we greedily build a set S of top_n terms that balances:
-  #   relevance  — how similar a candidate is to the topic reference
-  #   redundancy — how similar it is to terms already in S
+  #   relevance   --  how similar a candidate is to the topic reference
+  #   redundancy  --  how similar it is to terms already in S
   #
   # At each step k we pick the remaining candidate that maximises:
-  #   MMR(w) = (1 − λ) × sim(w, topic) − λ × max_{s∈S} sim(w, s)
-  # where λ = diversity (default 0.1 → strongly favour relevance).
+  #   MMR(w) = (1 - lambda) x sim(w, topic) - lambda x max_{sinS} sim(w, s)
+  # where lambda = diversity (default 0.1 -> strongly favour relevance).
   #
   # A diversity of 0 reduces to pure relevance ordering (same as c-TF-IDF rank).
   # A diversity of 1 would greedily maximise dissimilarity at the expense of
-  # any relationship to the topic.  Values of 0.1–0.3 work well in practice.
+  # any relationship to the topic.  Values of 0.1 - 0.3 work well in practice.
   new_rows <- lapply(seq_along(topics_nonnoise), function(i) {
     t          <- topics_nonnoise[i]
     candidates <- candidates_by_topic[[as.character(t)]]
@@ -156,12 +163,12 @@ apply_mmr <- function(fit,
 
     # word_doc_sim: cosine similarity of each candidate to the topic reference.
     # Shape: n_cand.  This is the "relevance" score.
-    # Matrix multiplication (cand_emb × topic_vec) works because both are L2-
+    # Matrix multiplication (cand_emb x topic_vec) works because both are L2-
     # normalised, so dot product = cosine similarity.
     word_doc_sim  <- as.vector(cand_emb %*% topic_vec)
 
     # word_word_sim: pairwise cosine similarities between all candidates.
-    # Shape: n_cand × n_cand.  Entry [i, j] = sim(candidate_i, candidate_j).
+    # Shape: n_cand x n_cand.  Entry [i, j] = sim(candidate_i, candidate_j).
     # We use this to penalise candidates that are similar to already-chosen terms.
     word_word_sim <- cand_emb %*% t(cand_emb)
 
@@ -173,7 +180,7 @@ apply_mmr <- function(fit,
     selected[1L] <- which.max(word_doc_sim)
     remaining    <- remaining[remaining != selected[1L]]
 
-    # Steps k=2…n_select: pick greedily by MMR score.
+    # Steps k=2...n_select: pick greedily by MMR score.
     for (k in seq(2L, n_select)) {
       if (length(remaining) == 0L) break
 
@@ -183,7 +190,7 @@ apply_mmr <- function(fit,
       # Redundancy of each remaining candidate relative to ALREADY SELECTED terms.
       # For each remaining candidate, take its maximum similarity to any selected
       # term.  The max (not mean) ensures we strongly penalise any candidate that
-      # closely mirrors even ONE already-chosen term — preventing near-duplicates.
+      # closely mirrors even ONE already-chosen term  --  preventing near-duplicates.
       redundancy <- apply(
         word_word_sim[remaining, selected[seq_len(k - 1L)], drop = FALSE],
         1L, max
@@ -199,7 +206,7 @@ apply_mmr <- function(fit,
     selected_terms <- candidates[selected[selected != 0L]]
 
     # Preserve original c-TF-IDF scores for the selected terms.
-    # MMR changes WHICH terms are shown and their ORDER, but not the scores —
+    # MMR changes WHICH terms are shown and their ORDER, but not the scores  -- 
     # the score column still reflects how characteristic each term is of the topic.
     orig <- fit$topic_terms[fit$topic_terms$topic == t, ]
     score_lookup <- stats::setNames(orig$score, orig$term)

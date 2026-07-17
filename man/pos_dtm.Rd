@@ -39,13 +39,21 @@ pos_dtm(
 \item{verbose}{Print progress messages (default \code{TRUE}).}
 }
 \value{
-A sparse \code{dgCMatrix}: documents × POS-filtered vocabulary.
+A sparse \code{dgCMatrix}: documents x POS-filtered vocabulary.
 }
 \description{
 Annotates each document in \code{docs} with a udpipe language model, keeps
 only tokens whose UPOS tag is in \code{pos} (and/or phrases matching
 \code{patterns}), then builds a sparse document-term matrix from the
 surviving tokens.  The result is compatible with \code{\link{c_tf_idf}}.
+}
+\examples{
+\dontrun{
+  docs <- c("The neural network learns features.",
+            "Gradient descent optimizes weights.",
+            "Transformers use attention mechanisms.")
+  pos_dtm(docs, pos = c("NOUN", "VERB"))
+}
 }
 \seealso{
 \code{\link{pos_representation}}, \code{\link{build_dtm}}

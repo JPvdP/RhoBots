@@ -22,13 +22,21 @@ Produces a four-panel interactive dashboard (via \pkg{plotly}) from a
 \code{topic_quality} object returned by \code{\link{topic_quality}}.
 The panels are:
 \enumerate{
-\item \strong{Silhouette per topic} — horizontal bars coloured from red
+\item \strong{Silhouette per topic}  --  horizontal bars coloured from red
 (negative) through yellow (zero) to green (positive).
-\item \strong{Topic size distribution} — document counts per topic, with
+\item \strong{Topic size distribution}  --  document counts per topic, with
 the noise class shown separately.
-\item \strong{Centroid similarity} — pairwise cosine similarity matrix
+\item \strong{Centroid similarity}  --  pairwise cosine similarity matrix
 between topic centroids (lower = more distinct).
-\item \strong{Vocabulary overlap} — pairwise Jaccard similarity of the
+\item \strong{Vocabulary overlap}  --  pairwise Jaccard similarity of the
 top-\eqn{N} c-TF-IDF term sets (lower = less overlap).
+}
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  q   <- topic_quality(fit)
+  visualize_quality(q, fit = fit)
 }
 }

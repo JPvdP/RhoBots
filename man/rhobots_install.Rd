@@ -32,3 +32,8 @@ On Windows, install the Visual C++ Redistributable \strong{before} calling this
 function if you see a \code{lantern.dll} error.  The installer is available at:
 \url{https://aka.ms/vs/17/release/vc_redist.x64.exe}
 }
+\examples{
+\dontrun{
+  rhobots_install()
+}
+}

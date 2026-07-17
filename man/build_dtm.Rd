@@ -37,3 +37,8 @@ Tokenizes each document (lowercase, split on non-alphanumeric), removes
 stopwords, optionally generates n-grams, then applies document-frequency
 filtering.  Returns a sparse matrix suitable for the c-TF-IDF step.
 }
+\examples{
+docs <- c("the cat sat on the mat", "the dog chased the cat",
+          "a cat and a dog", "the mat is on the floor")
+build_dtm(docs, min_df = 1L)
+}

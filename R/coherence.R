@@ -1,5 +1,5 @@
 # =============================================================================
-# coherence.R — Lexical coherence metrics (NPMI, CV) for bertopic_fit objects.
+# coherence.R  --  Lexical coherence metrics (NPMI, CV) for bertopic_fit objects.
 #
 # Complements the embedding-space metrics in evaluate.R with word-level
 # measures that are standard in the LDA / topic-modeling literature.
@@ -9,7 +9,7 @@
 #'
 #' Measures how often the top terms of each topic co-occur in the same
 #' documents.  High coherence means the words form a semantically tight
-#' cluster — they appear together rather than in isolation.
+#' cluster  --  they appear together rather than in isolation.
 #'
 #' Two measures are supported:
 #' \describe{
@@ -35,6 +35,12 @@
 #'   \item{\code{top_n}}{Number of terms used.}
 #' }
 #' @seealso \code{\link{topic_quality}}
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   topic_coherence(fit)
+#' }
 #' @export
 topic_coherence <- function(fit, top_n = 10L, measure = c("npmi", "cv")) {
   measure <- match.arg(measure)
@@ -69,7 +75,7 @@ topic_coherence <- function(fit, top_n = 10L, measure = c("npmi", "cv")) {
     if (length(terms) < 2L) return(NA_real_)
 
     # Extract the indicator columns for just the top terms of this topic.
-    # cols is a sparse logical sub-matrix: n_docs × length(terms).
+    # cols is a sparse logical sub-matrix: n_docs x length(terms).
     cols  <- bin_dtm[, terms, drop = FALSE]
 
     # combn() generates all unordered pairs of column indices.
@@ -78,7 +84,7 @@ topic_coherence <- function(fit, top_n = 10L, measure = c("npmi", "cv")) {
     # WHY pairs and not individual terms?  Coherence is a RELATIONAL measure:
     # a term that appears in every document is trivially frequent but tells us
     # nothing about topic cohesion.  What matters is how reliably word pairs
-    # co-occur — that is the signal that distinguishes tight topics from loose ones.
+    # co-occur  --  that is the signal that distinguishes tight topics from loose ones.
     pairs <- utils::combn(seq_len(ncol(cols)), 2L)
 
     vals <- apply(pairs, 2L, function(idx) {
@@ -90,14 +96,14 @@ topic_coherence <- function(fit, top_n = 10L, measure = c("npmi", "cv")) {
       p12 <- sum(cols[, w1] & cols[, w2]) / n_docs
 
       if (measure == "npmi") {
-        # NPMI — Normalised Pointwise Mutual Information
+        # NPMI  --  Normalised Pointwise Mutual Information
         #
-        # Raw PMI = log( P(w1,w2) / (P(w1) × P(w2)) )
+        # Raw PMI = log( P(w1,w2) / (P(w1) x P(w2)) )
         #   Positive when words co-occur more often than chance.
         #   Negative when they avoid each other.
         #
-        # NPMI divides by −log P(w1,w2), which maps the range to [−1, +1]:
-        #   −1  words never co-occur (p12 → 0)
+        # NPMI divides by -log P(w1,w2), which maps the range to [-1, +1]:
+        #   -1  words never co-occur (p12 -> 0)
         #    0  words are statistically independent
         #   +1  words always appear together (p12 = p1 = p2)
         #
@@ -110,9 +116,9 @@ topic_coherence <- function(fit, top_n = 10L, measure = c("npmi", "cv")) {
         if (log_norm == 0) return(1)   # p12 = 1: always appear together
         log(p12 / (p1 * p2)) / log_norm
       } else {
-        # CV — log-conditional probability with Laplace smoothing
+        # CV  --  log-conditional probability with Laplace smoothing
         #
-        # CV(w1, w2) = log( (count(w1 ∧ w2) + 1) / (count(w1) + 1) )
+        # CV(w1, w2) = log( (count(w1 ^ w2) + 1) / (count(w1) + 1) )
         #
         # This is a smoothed estimate of log P(w2 | w1): how often does w2
         # appear given that w1 already appears?  Higher values (closer to 0)
@@ -148,13 +154,13 @@ print.topic_coherence <- function(x, ...) {
   cat(sprintf("<topic_coherence>  measure = %s   top_n = %d\n",
               toupper(x$measure), x$top_n))
   hint <- if (x$measure == "npmi")
-    "[>0.1 good, >0.3 excellent; ↑ better]" else "[higher is better]"
+    "[>0.1 good, >0.3 excellent; higher is better]" else "[higher is better]"
   cat(sprintf("  Mean %-5s: %6.3f  %s\n", toupper(x$measure), x$mean, hint))
   cat("\n  Per topic:\n")
   for (nm in names(x$per_topic)) {
     v <- x$per_topic[[nm]]
     bar <- if (!is.na(v)) strrep("|", max(0L, round((v + 1) * 10)))
-           else "  (NA — fewer than 2 terms in vocab)"
+           else "  (NA  --  fewer than 2 terms in vocab)"
     cat(sprintf("    Topic %-4s %6.3f  %s\n", paste0(nm, ":"), v, bar))
   }
   invisible(x)

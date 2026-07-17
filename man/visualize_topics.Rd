@@ -15,6 +15,34 @@ visualize_topics(
   height = 700L
 )
 }
+\arguments{
+\item{fit}{A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.}
+
+\item{dims}{Either \code{NULL} to use the stored 2-D UMAP layout, or a
+length-2 integer vector selecting columns from \code{fit$reduced}.}
+
+\item{label_topics}{Annotate topic centroids with short labels (default
+\code{TRUE}).}
+
+\item{max_label_chars}{Truncate centroid labels to this many characters.}
+
+\item{point_size}{Marker size (default 5).}
+
+\item{noise_color}{Hex colour for noise documents (default \code{"#cccccc"}).}
+
+\item{width, height}{Plot dimensions in pixels (defaults: 900 x 700).}
+}
+\value{
+A \code{plotly} figure object, or \code{NULL} if no topics were found.
+}
 \description{
-Visualise documents in topic space
+Produces an interactive 2-D scatter plot (via \pkg{plotly}) with one point
+per document, coloured by topic.
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  visualize_topics(fit)
+}
 }

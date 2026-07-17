@@ -22,3 +22,6 @@ A \code{umap_reduction} model object.
 Wraps \code{uwot::umap}.  This is the default dimensionality-reduction
 model used by \code{\link{fit_bertopic}}.
 }
+\examples{
+m <- umap_reduction(n_neighbors = 10L, n_components = 3L)
+}

@@ -21,3 +21,6 @@ Wraps \code{stats::kmeans}.  Unlike HDBSCAN, k-means assigns every
 document to a cluster (no noise label \code{-1}) and requires specifying
 the number of clusters \code{k} in advance.
 }
+\examples{
+m <- kmeans_clustering(k = 5L)
+}

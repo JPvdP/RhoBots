@@ -18,6 +18,11 @@ produced a local conversion, or (c) you want to pin to a specific local
 file rather than the latest on the Hub.  When supplied, this overrides
 the Hub weight discovery; \code{config.json} and the tokenizer are still
 pulled from \code{repo_id}.}
+
+\item{prefix}{Optional string prepended to every text before tokenization.
+Required for best performance with BGE (\code{"Represent this sentence: "})
+and E5 (\code{"passage: "}) models.  Stored in the returned encoder and applied
+automatically by \code{\link[=embed_texts]{embed_texts()}}; pass \code{prefix = ""} to disable.}
 }
 \value{
 A list with three elements:
@@ -42,7 +47,7 @@ transparently when they aren't:
 \item \strong{Weights}: \code{model.safetensors} is preferred (device-agnostic, safe,
 fast).  If absent, \code{pytorch_model.bin} is read via R-torch's pickle
 loader.  If the model has only \code{pytorch_model.bin} and that file was
-saved on a CUDA device, the load will fail — convert the upstream
+saved on a CUDA device, the load will fail  --  convert the upstream
 model to safetensors first (see HuggingFace's \code{safetensors/convert}
 Space) and pass the result via \code{weights_path}.
 \item \strong{Tokenizer}: \code{tokenizer.json} (HuggingFace fast tokenizer via the
@@ -56,11 +61,11 @@ Space) and pass the result via \code{weights_path}.
   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
   emb <- embed_texts(enc, c("Hello world.", "Another sentence."))
 
-  # BGE model — prefix at load time, applied automatically on every embed call
+  # BGE model  --  prefix at load time, applied automatically on every embed call
   enc <- load_hf_bert("BAAI/bge-base-en-v1.5",
                        prefix = "Represent this sentence: ")
 
-  # E5 model — passage prefix for documents
+  # E5 model  --  passage prefix for documents
   enc <- load_hf_bert("intfloat/e5-base-v2", prefix = "passage: ")
   # Override per-call for query-side embedding:
   query_emb <- embed_texts(enc, queries, prefix = "query: ")

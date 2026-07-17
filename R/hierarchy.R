@@ -1,5 +1,5 @@
 # =============================================================================
-# hierarchy.R — Hierarchical topic modelling via agglomerative merging.
+# hierarchy.R  --  Hierarchical topic modelling via agglomerative merging.
 #
 # Builds a bottom-up merge tree from a fitted bertopic_fit using the
 # cosine distance between topic centroids.  At each internal node the
@@ -146,11 +146,18 @@ print.hierarchical_topics <- function(x, ...) {
 #' }
 #'
 #' @param h A `hierarchical_topics` object from [hierarchical_topics()].
-#' @param fit Optional `bertopic_fit` — when supplied, leaf labels show topic
+#' @param fit Optional `bertopic_fit`  --  when supplied, leaf labels show topic
 #'   words; when `NULL`, leaves are labelled by topic ID only.
 #' @param n_label_words Number of topic words to show per leaf label.
 #' @param width,height Plot dimensions in pixels.
 #' @return A `plotly` figure object.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   h   <- hierarchical_topics(fit)
+#'   visualize_hierarchy(h, fit = fit)
+#' }
 #' @export
 visualize_hierarchy <- function(h, fit = NULL,
                                  n_label_words = 3L,

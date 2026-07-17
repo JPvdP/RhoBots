@@ -15,7 +15,7 @@ visualize_hierarchy(
 \arguments{
 \item{h}{A \code{hierarchical_topics} object from \code{\link[=hierarchical_topics]{hierarchical_topics()}}.}
 
-\item{fit}{Optional \code{bertopic_fit} — when supplied, leaf labels show topic
+\item{fit}{Optional \code{bertopic_fit}  --  when supplied, leaf labels show topic
 words; when \code{NULL}, leaves are labelled by topic ID only.}
 
 \item{n_label_words}{Number of topic words to show per leaf label.}
@@ -31,5 +31,13 @@ Produces an interactive plotly dendrogram with:
 \item Leaf labels: topic ID + top c-TF-IDF words (from \code{fit})
 \item Internal node hover: merged topics and their pooled terms
 \item Height axis: cosine distance at which topics were merged
+}
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  h   <- hierarchical_topics(fit)
+  visualize_hierarchy(h, fit = fit)
 }
 }

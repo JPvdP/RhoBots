@@ -66,3 +66,11 @@ object.  If you subsequently call \code{\link{reduce_topics}},
 \code{\link{merge_topics}}, or \code{\link{reduce_outliers}}, topic terms
 are recomputed from c-TF-IDF and MMR needs to be re-applied.
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  fit <- apply_mmr(fit, encoder = enc, diversity = 0.3)
+  get_topic(fit, 0L)
+}
+}

@@ -1,5 +1,5 @@
 # =============================================================================
-# llm_labeling.R — Generate human-readable topic labels via an LLM API.
+# llm_labeling.R  --  Generate human-readable topic labels via an LLM API.
 #
 # Supports Anthropic (Claude), OpenAI (GPT), and Ollama (local) via httr2.
 # Ollama uses the OpenAI-compatible endpoint at http://localhost:11434/v1 so
@@ -37,7 +37,7 @@
     "concise topic label of 3 to 5 words that captures the core theme.\n\n",
     "Top terms: ", terms, "\n\n",
     "Representative documents:\n", docs_str, "\n\n",
-    "Respond with ONLY the topic label — no punctuation at the end, ",
+    "Respond with ONLY the topic label  --  no punctuation at the end, ",
     "no explanation, no quotes."
   )
 }
@@ -142,6 +142,15 @@
 #'   prompt template.  Use \code{\{terms\}} and \code{\{docs\}} as placeholders.
 #' @param verbose Print each returned label as it arrives (default \code{TRUE}).
 #' @return The input \code{fit} with updated \code{$topic_labels}.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   fit <- label_topics_llm(fit, provider = "anthropic",
+#'                           api_key = Sys.getenv("ANTHROPIC_API_KEY"),
+#'                           model = "claude-haiku-4-5-20251001")
+#'   get_topic_info(fit)
+#' }
 #' @export
 label_topics_llm <- function(fit,
                               provider              = c("anthropic", "openai", "ollama"),

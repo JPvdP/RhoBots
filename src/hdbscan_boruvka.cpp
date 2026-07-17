@@ -343,10 +343,11 @@ static inline int nd_sz(int node, const vector<SLNode>& sl, int n) {
 //' \code{n_mst_edges} (number of MST edges built).  When \code{n_mst_edges < n-1}
 //' the kNN graph was disconnected; the R wrapper retries with larger k.
 //'
-//' @param knn_idx Integer matrix (n × k), 1-indexed nearest-neighbour indices.
-//' @param knn_dist Numeric matrix (n × k), corresponding distances.
+//' @param knn_idx Integer matrix (n x k), 1-indexed nearest-neighbour indices.
+//' @param knn_dist Numeric matrix (n x k), corresponding distances.
 //' @param min_pts Integer minimum cluster size / core-distance order.
 //' @return Named list: \code{labels} (IntegerVector), \code{n_mst_edges} (int).
+//' @keywords internal
 // [[Rcpp::export]]
 List hdbscan_boruvka_cpp(IntegerMatrix knn_idx,
                           NumericMatrix knn_dist,

@@ -1,12 +1,12 @@
 # =============================================================================
-# cache.R — Embedding persistence utilities.
+# cache.R  --  Embedding persistence utilities.
 #
 # The intended workflow is:
 #
-#   # Session 1 — compute once and save
+#   # Session 1  --  compute once and save
 #   emb <- embed_texts_cached(enc, docs, cache_file = "emb.rds")
 #
-#   # Session 2 — load instantly, skip the encoder entirely
+#   # Session 2  --  load instantly, skip the encoder entirely
 #   emb <- embed_texts_cached(cache_file = "emb.rds", texts = docs)
 #
 #   # Experiment freely with different models
@@ -39,6 +39,12 @@
 #'   \code{NULL}, inheriting the encoder's stored prefix.
 #' @param verbose Print progress messages.
 #' @return A numeric matrix with \code{length(texts)} rows.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   docs <- c("First document.", "Second document.", "Third document.")
+#'   emb  <- embed_texts_cached(enc, docs, cache_file = tempfile(fileext = ".rds"))
+#' }
 #' @export
 embed_texts_cached <- function(encoder    = NULL,
                                 texts,
@@ -62,7 +68,7 @@ embed_texts_cached <- function(encoder    = NULL,
            length(texts), " elements.\n",
            "Re-run with overwrite = TRUE to refresh the cache.")
     if (verbose)
-      message("Loaded ", nrow(emb), " × ", ncol(emb),
+      message("Loaded ", nrow(emb), " x ", ncol(emb),
               " embedding matrix from cache.")
     return(emb)
   }
@@ -94,10 +100,16 @@ embed_texts_cached <- function(encoder    = NULL,
 #' Save an embedding matrix to disk
 #'
 #' @param embeddings A numeric matrix (rows = documents, columns = dimensions).
-#' @param path File path.  Use a \code{.rds} extension (recommended — lossless,
+#' @param path File path.  Use a \code{.rds} extension (recommended  --  lossless,
 #'   fast) or \code{.csv} (portable but larger and slower).  If no extension is
 #'   given, \code{.rds} is appended automatically.
 #' @return The resolved file path, invisibly.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb <- embed_texts(enc, c("doc one", "doc two"))
+#'   save_embeddings(emb, tempfile(fileext = ".rds"))
+#' }
 #' @export
 save_embeddings <- function(embeddings, path) {
   if (!is.matrix(embeddings) || !is.numeric(embeddings))
@@ -122,6 +134,14 @@ save_embeddings <- function(embeddings, path) {
 #' @param path Path to a \code{.rds} or \code{.csv} file previously written by
 #'   \code{\link{save_embeddings}}.
 #' @return A numeric matrix.
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb  <- embed_texts(enc, c("doc one", "doc two"))
+#'   path <- tempfile(fileext = ".rds")
+#'   save_embeddings(emb, path)
+#'   load_embeddings(path)
+#' }
 #' @export
 load_embeddings <- function(path) {
   if (!file.exists(path)) stop("File not found: ", path)

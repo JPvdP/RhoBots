@@ -43,3 +43,7 @@ The result is typically combined with the built-in list before passing to
                       extra_stopwords = domain_words)
 }
 }
+\examples{
+load_stopwords(c("foo", "bar", "baz"))
+load_stopwords(data.frame(word = c("foo", "bar")), column = "word")
+}

@@ -19,3 +19,6 @@ An \code{agglomerative_clustering} model object.
 Wraps \code{stats::hclust} + \code{stats::cutree}.  Like k-means, every
 document is assigned to a cluster (no noise label).
 }
+\examples{
+m <- agglomerative_clustering(k = 5L)
+}

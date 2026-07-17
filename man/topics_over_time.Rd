@@ -51,3 +51,12 @@ global c-TF-IDF (computed over all documents) so words that are absent
 from a narrow time window are not completely lost.}
 }
 }
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+  years <- as.Date(paste0(sample(2015:2023, length(abstracts), replace = TRUE), "-01-01"))
+  tot  <- topics_over_time(fit, timestamps = years)
+  visualize_topics_over_time(tot, fit = fit)
+}
+}

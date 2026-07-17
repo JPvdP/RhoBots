@@ -32,6 +32,23 @@ fit_bertopic(
 
 \item{docs}{Character vector of documents.}
 
+\item{embeddings}{Optional pre-computed embedding matrix (rows = documents,
+columns = dimensions).  When supplied, \code{encoder} is ignored for embedding
+and its value may be \code{NULL}.}
+
+\item{dim_reduction_model}{A dimensionality-reduction model object from
+\code{\link[=umap_reduction]{umap_reduction()}}, \code{\link[=pca_reduction]{pca_reduction()}}, or \code{\link[=no_reduction]{no_reduction()}}.  When
+\code{NULL} (default), a UMAP model is built from the legacy
+\code{umap_*} parameters.}
+
+\item{cluster_model}{A clustering model from \code{\link[=hdbscan_clustering]{hdbscan_clustering()}},
+\code{\link[=kmeans_clustering]{kmeans_clustering()}}, or \code{\link[=agglomerative_clustering]{agglomerative_clustering()}}.  When \code{NULL}
+(default), HDBSCAN is used with the legacy \code{hdbscan_*} parameters.}
+
+\item{representation_model}{Optional representation model from
+\code{\link[=cvalue_representation]{cvalue_representation()}}, \code{\link[=pos_representation]{pos_representation()}}, or similar.  When
+\code{NULL} (default) standard c-TF-IDF is used.}
+
 \item{umap_n_neighbors}{UMAP \code{n_neighbors} parameter (default 15).}
 
 \item{umap_n_components}{Reduced dimensionality for clustering (default 5).}
@@ -42,9 +59,26 @@ fit_bertopic(
 
 \item{hdbscan_min_pts}{HDBSCAN \code{minPts} (default 10).}
 
+\item{hdbscan_method}{HDBSCAN cluster-extraction method: \code{"eom"}
+(excess of mass, default) or \code{"leaf"}.}
+
 \item{top_n_terms}{Number of terms per topic in the output (default 10).}
 
-\item{stopwords}{Character vector of words to drop before c-TF-IDF.}
+\item{language}{Language for built-in stopword list (default
+\code{"english"}).  Passed to \code{\link[=get_stopwords]{get_stopwords()}}.}
+
+\item{stopwords}{Character vector of words to drop before c-TF-IDF.
+Replaces the built-in list when supplied.}
+
+\item{extra_stopwords}{Additional stopwords appended to the built-in
+(or user-supplied) list.}
+
+\item{ngram_range}{Integer vector of length 2 specifying the minimum and
+maximum n-gram sizes for c-TF-IDF (default \code{c(1L, 1L)} = unigrams
+only).}
+
+\item{reduce_frequent_words}{If \code{TRUE}, apply a square-root IDF
+dampening to very frequent words (default \code{FALSE}).}
 
 \item{seed}{Random seed for reproducibility (default 42).}
 

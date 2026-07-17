@@ -31,7 +31,7 @@ Defaults to \code{42 * 1:n_runs}.}
 \value{
 A list of class \code{stability_result} with elements:
 \describe{
-\item{\code{ari_matrix}}{Symmetric ARI matrix (\code{n_runs × n_runs}).}
+\item{\code{ari_matrix}}{Symmetric ARI matrix (\code{n_runs x n_runs}).}
 \item{\code{mean_ari}}{Mean ARI across all off-diagonal pairs.}
 \item{\code{per_doc_stability}}{For each document, the fraction of runs
 that agreed on the modal topic assignment (1.0 = always the same).}
@@ -49,6 +49,14 @@ ARI = 1 means two clusterings are identical; ARI \eqn{\approx} 0 means
 agreement no better than chance; negative values indicate systematic
 disagreement.  A mean ARI above 0.8 across all run pairs indicates a
 stable, reproducible topic structure.
+}
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb  <- embed_texts(enc, abstracts)
+  stab <- stability_analysis(abstracts, emb, n_runs = 3L)
+  stab$mean_ari
+}
 }
 \seealso{
 \code{\link{visualize_stability}}, \code{\link{sweep_topics}}

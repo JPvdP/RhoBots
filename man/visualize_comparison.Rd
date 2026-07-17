@@ -2,7 +2,7 @@
 % Please edit documentation in R/compare_topics.R
 \name{visualize_comparison}
 \alias{visualize_comparison}
-\title{Interactive heatmap of topic–group associations}
+\title{Interactive heatmap of topic - group associations}
 \usage{
 visualize_comparison(
   comp,
@@ -21,7 +21,7 @@ largest mean absolute statistic.  \code{NULL} (default) shows all topics.}
 \item{max_label_chars}{Maximum characters for topic labels before truncation
 with an ellipsis (default 25).}
 
-\item{width, height}{Plot dimensions in pixels (default 1000 × 420).}
+\item{width, height}{Plot dimensions in pixels (default 1000 x 420).}
 }
 \value{
 A \code{plotly} figure.
@@ -34,4 +34,13 @@ represented in that group, red = under-represented.
 \details{
 Topics are placed on the x-axis (with angled labels) and groups on the
 y-axis, which keeps the chart readable even when topic labels are long.
+}
+\examples{
+\dontrun{
+  enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit    <- fit_bertopic(docs = abstracts, encoder = enc)
+  groups <- sample(c("A", "B"), length(abstracts), replace = TRUE)
+  comp   <- compare_topics(fit, groups)
+  visualize_comparison(comp)
+}
 }

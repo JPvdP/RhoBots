@@ -42,7 +42,7 @@ S3 generic that dispatches on the classifier class returned by
 \code{\link[=load_hf_classifier]{load_hf_classifier()}}.
 }
 \details{
-\strong{Sequence classification} (sentiment, topic, …): returns a \code{data.frame}
+\strong{Sequence classification} (sentiment, topic, ...): returns a \code{data.frame}
 with columns \code{text}, \code{label}, \code{score}, plus one probability column per
 label.  For \code{problem_type = "regression"} the label columns contain raw
 numeric scores.  For \code{problem_type = "multi_label_classification"} each

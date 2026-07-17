@@ -1,5 +1,5 @@
 # =============================================================================
-# topic_model.R — Topic modeling pipeline on top of `embed_texts()`.
+# topic_model.R  --  Topic modeling pipeline on top of `embed_texts()`.
 #
 # Implements the four-stage BERTopic algorithm (embed -> reduce -> cluster
 # -> extract topic terms) with native R packages.  Designed to be extended
@@ -29,6 +29,10 @@
 #'   only).
 #' @return A sparse \code{dgCMatrix} of dimensions \code{length(docs)} x
 #'   vocab size, with \code{colnames} set to the vocabulary.
+#' @examples
+#' docs <- c("the cat sat on the mat", "the dog chased the cat",
+#'           "a cat and a dog", "the mat is on the floor")
+#' build_dtm(docs, min_df = 1L)
 #' @export
 build_dtm <- function(docs, min_df = 2, max_df_frac = 0.95,
                       stopwords = character(), ngram_range = c(1L, 1L)) {
@@ -99,6 +103,11 @@ build_dtm <- function(docs, min_df = 2, max_df_frac = 0.95,
 #'   Mirrors the \code{reduce_frequent_words} option in Python BERTopic's
 #'   \code{ClassTfidfTransformer}.  Default \code{FALSE}.
 #' @return A data frame with columns `topic`, `rank`, `term`, `score`.
+#' @examples
+#' docs <- c("the cat sat on mat", "a dog chased cat",
+#'           "machine learning models", "deep learning neural nets")
+#' dtm  <- build_dtm(docs, min_df = 1L)
+#' c_tf_idf(dtm, cluster_ids = c(0L, 0L, 1L, 1L), top_n = 3L)
 #' @export
 c_tf_idf <- function(dtm, cluster_ids, top_n = 10,
                      reduce_frequent_words = FALSE) {
@@ -205,13 +214,38 @@ c_tf_idf <- function(dtm, cluster_ids, top_n = 10,
 #'
 #' @param encoder A loaded encoder, as returned by [load_hf_bert()].
 #' @param docs Character vector of documents.
+#' @param embeddings Optional pre-computed embedding matrix (rows = documents,
+#'   columns = dimensions).  When supplied, `encoder` is ignored for embedding
+#'   and its value may be \code{NULL}.
+#' @param dim_reduction_model A dimensionality-reduction model object from
+#'   [umap_reduction()], [pca_reduction()], or [no_reduction()].  When
+#'   \code{NULL} (default), a UMAP model is built from the legacy
+#'   \code{umap_*} parameters.
+#' @param cluster_model A clustering model from [hdbscan_clustering()],
+#'   [kmeans_clustering()], or [agglomerative_clustering()].  When \code{NULL}
+#'   (default), HDBSCAN is used with the legacy \code{hdbscan_*} parameters.
+#' @param representation_model Optional representation model from
+#'   [cvalue_representation()], [pos_representation()], or similar.  When
+#'   \code{NULL} (default) standard c-TF-IDF is used.
 #' @param umap_n_neighbors UMAP `n_neighbors` parameter (default 15).
 #' @param umap_n_components Reduced dimensionality for clustering (default 5).
 #' @param umap_min_dist UMAP `min_dist` (default 0).
 #' @param umap_metric UMAP distance metric (default `"cosine"`).
 #' @param hdbscan_min_pts HDBSCAN `minPts` (default 10).
+#' @param hdbscan_method HDBSCAN cluster-extraction method: \code{"eom"}
+#'   (excess of mass, default) or \code{"leaf"}.
 #' @param top_n_terms Number of terms per topic in the output (default 10).
+#' @param language Language for built-in stopword list (default
+#'   \code{"english"}).  Passed to [get_stopwords()].
 #' @param stopwords Character vector of words to drop before c-TF-IDF.
+#'   Replaces the built-in list when supplied.
+#' @param extra_stopwords Additional stopwords appended to the built-in
+#'   (or user-supplied) list.
+#' @param ngram_range Integer vector of length 2 specifying the minimum and
+#'   maximum n-gram sizes for c-TF-IDF (default \code{c(1L, 1L)} = unigrams
+#'   only).
+#' @param reduce_frequent_words If \code{TRUE}, apply a square-root IDF
+#'   dampening to very frequent words (default \code{FALSE}).
 #' @param seed Random seed for reproducibility (default 42).
 #' @param verbose Whether to print progress messages (default TRUE).
 #' @return A list (class `bertopic_fit`) with elements:
@@ -231,12 +265,12 @@ fit_bertopic <- function(encoder               = NULL,
                          dim_reduction_model   = NULL,
                          cluster_model         = NULL,
                          representation_model  = NULL,
-                         # Legacy UMAP params — used to build default umap_reduction()
+                         # Legacy UMAP params  --  used to build default umap_reduction()
                          umap_n_neighbors      = 15,
                          umap_n_components     = 5,
                          umap_min_dist         = 0.0,
                          umap_metric           = "cosine",
-                         # Legacy HDBSCAN params — used to build default hdbscan_clustering()
+                         # Legacy HDBSCAN params  --  used to build default hdbscan_clustering()
                          hdbscan_min_pts       = 10,
                          hdbscan_method        = c("eom", "leaf"),
                          top_n_terms           = 10,
@@ -289,9 +323,9 @@ fit_bertopic <- function(encoder               = NULL,
   # --- [4] c-TF-IDF ---------------------------------------------------------
   if (verbose) message("[4/4] Extracting topic terms (c-TF-IDF)...")
   # Build final stopword list:
-  #   stopwords = NULL  → use language defaults
-  #   stopwords = c(…)  → replaces defaults entirely
-  #   extra_stopwords   → always appended on top (accepts vector, file, or df)
+  #   stopwords = NULL  -> use language defaults
+  #   stopwords = c(...)  -> replaces defaults entirely
+  #   extra_stopwords   -> always appended on top (accepts vector, file, or df)
   base_sw  <- if (!is.null(stopwords)) stopwords else
     if (nchar(language) > 0L) .english_stopwords else character(0)
   extra_sw <- if (!is.null(extra_stopwords))
@@ -401,6 +435,13 @@ fit_bertopic <- function(encoder               = NULL,
 #'
 #' @param fit A fit object from [fit_bertopic()].
 #' @param max_topics Maximum number of topics to display.
+#' @return Called for its side effect (printing); returns \code{NULL} invisibly.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   print_topics(fit)
+#' }
 #' @export
 print_topics <- function(fit, max_topics = 20) {
   tt <- fit$topic_terms
@@ -423,6 +464,13 @@ print_topics <- function(fit, max_topics = 20) {
 #' Print method for bertopic_fit objects
 #' @param x A bertopic_fit object.
 #' @param ... Unused.
+#' @return Invisibly returns \code{x}.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   print(fit)
+#' }
 #' @export
 print.bertopic_fit <- function(x, ...) {
   n_topics <- length(setdiff(unique(x$clusters), -1L))

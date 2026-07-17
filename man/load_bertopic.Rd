@@ -16,6 +16,15 @@ A \code{bertopic_fit} object.
 Reads a model directory written by \code{\link{save_bertopic}} and
 reconstructs the \code{bertopic_fit} object.
 }
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+  path <- tempdir()
+  save_bertopic(fit, path)
+  fit2 <- load_bertopic(path)
+}
+}
 \seealso{
 \code{\link{save_bertopic}}
 }

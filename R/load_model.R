@@ -1,5 +1,5 @@
 # =============================================================================
-# load_model.R — User-facing function to load a HuggingFace BERT-family
+# load_model.R  --  User-facing function to load a HuggingFace BERT-family
 # model from R, in one call.  Handles model discovery, format detection,
 # tokenizer selection, and weight loading.
 # =============================================================================
@@ -19,7 +19,7 @@
 #' * **Weights**: `model.safetensors` is preferred (device-agnostic, safe,
 #'   fast).  If absent, `pytorch_model.bin` is read via R-torch's pickle
 #'   loader.  If the model has only `pytorch_model.bin` and that file was
-#'   saved on a CUDA device, the load will fail — convert the upstream
+#'   saved on a CUDA device, the load will fail  --  convert the upstream
 #'   model to safetensors first (see HuggingFace's `safetensors/convert`
 #'   Space) and pass the result via `weights_path`.
 #' * **Tokenizer**: `tokenizer.json` (HuggingFace fast tokenizer via the
@@ -37,6 +37,10 @@
 #'   file rather than the latest on the Hub.  When supplied, this overrides
 #'   the Hub weight discovery; `config.json` and the tokenizer are still
 #'   pulled from `repo_id`.
+#' @param prefix Optional string prepended to every text before tokenization.
+#'   Required for best performance with BGE (`"Represent this sentence: "`)
+#'   and E5 (`"passage: "`) models.  Stored in the returned encoder and applied
+#'   automatically by [embed_texts()]; pass `prefix = ""` to disable.
 #' @return A list with three elements:
 #'   \describe{
 #'     \item{`model`}{the loaded `bert_model` nn_module}
@@ -49,11 +53,11 @@
 #'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
 #'   emb <- embed_texts(enc, c("Hello world.", "Another sentence."))
 #'
-#'   # BGE model — prefix at load time, applied automatically on every embed call
+#'   # BGE model  --  prefix at load time, applied automatically on every embed call
 #'   enc <- load_hf_bert("BAAI/bge-base-en-v1.5",
 #'                        prefix = "Represent this sentence: ")
 #'
-#'   # E5 model — passage prefix for documents
+#'   # E5 model  --  passage prefix for documents
 #'   enc <- load_hf_bert("intfloat/e5-base-v2", prefix = "passage: ")
 #'   # Override per-call for query-side embedding:
 #'   query_emb <- embed_texts(enc, queries, prefix = "query: ")
@@ -69,7 +73,7 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
          "then rhobots_install().")
   if (!torch::torch_is_installed()) {
     extra <- if (.Platform$OS.type == "windows")
-      paste0("\nWindows: first install the Visual C++ Redistributable 2022 —",
+      paste0("\nWindows: first install the Visual C++ Redistributable 2022  -- ",
              "\n  https://aka.ms/vs/17/release/vc_redist.x64.exe",
              "\nthen restart Windows and run rhobots_install().")
     else
@@ -196,7 +200,7 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
 #'
 #' Available adapters on the HuggingFace Hub:
 #' \describe{
-#'   \item{`"allenai/specter2"`}{Proximity / similarity — recommended for
+#'   \item{`"allenai/specter2"`}{Proximity / similarity  --  recommended for
 #'     document retrieval and topic modeling (default).}
 #'   \item{`"allenai/specter2_adhoc_query"`}{Query-side adapter for asymmetric
 #'     retrieval (query vs. document).}
@@ -220,7 +224,7 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
 #' @export
 #' @examples
 #' \dontrun{
-#'   enc <- load_specter2()   # proximity adapter — best for topic modeling
+#'   enc <- load_specter2()   # proximity adapter  --  best for topic modeling
 #'   emb <- embed_texts(enc, c("Graph neural networks for drug discovery.",
 #'                              "Climate tipping points and carbon budgets."))
 #' }
@@ -298,12 +302,12 @@ load_specter2 <- function(adapter      = "allenai/specter2",
       "adapter_up.bias"       = adp_weights[[up_b_key]]
     ))
 
-    # Attach to the layer — R torch registers this as a submodule
+    # Attach to the layer  --  R torch registers this as a submodule
     enc$model$encoder$layer[[i]]$adapter <- adp
   }
 
   enc$model$eval()
-  message("SPECTER2 ready — base + '", adapter_name, "' adapter loaded.")
+  message("SPECTER2 ready  --  base + '", adapter_name, "' adapter loaded.")
 
   # Annotate the returned object with adapter provenance
   enc$adapter_repo <- adapter
@@ -314,6 +318,12 @@ load_specter2 <- function(adapter      = "allenai/specter2",
 #' Print method for bert_encoder objects
 #' @param x A bert_encoder object.
 #' @param ... Unused.
+#' @return Invisibly returns \code{x}.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   print(enc)
+#' }
 #' @export
 print.bert_encoder <- function(x, ...) {
   cat("<bert_encoder>\n")

@@ -17,7 +17,7 @@ guided_fit_bertopic(
 \arguments{
 \item{docs}{Character vector of documents.}
 
-\item{seed_topic_list}{Named list of character vectors — one entry per
+\item{seed_topic_list}{Named list of character vectors  --  one entry per
 expected topic.  Example:
 \code{list("Energy" = c("solar", "wind", "renewable", "battery"),
              "Economics" = c("labour", "wages", "capital", "trade"))}.}
@@ -49,6 +49,16 @@ added to the corpus before dimensionality reduction and clustering.  The
 anchors bias the latent space so that documents semantically close to the
 seed words cluster together.  Seed documents are removed from the fit
 before the object is returned.
+}
+\examples{
+\dontrun{
+  enc   <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  seeds <- list(
+    "Climate" = c("carbon", "emissions", "greenhouse", "warming"),
+    "Economy" = c("trade", "wages", "labour", "inflation")
+  )
+  fit <- guided_fit_bertopic(abstracts, seed_topic_list = seeds, encoder = enc)
+}
 }
 \seealso{
 \code{\link{fit_bertopic}}, \code{\link{zero_shot_topics}}

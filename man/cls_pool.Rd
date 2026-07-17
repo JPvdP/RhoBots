@@ -2,7 +2,7 @@
 % Please edit documentation in R/embed.R
 \name{cls_pool}
 \alias{cls_pool}
-\title{CLS-token pooling: extract the \link{CLS} hidden state as the sentence vector}
+\title{CLS-token pooling: extract the CLS hidden state as the sentence vector}
 \usage{
 cls_pool(hidden)
 }
@@ -16,4 +16,16 @@ A 2-D \code{torch_tensor} of shape \verb{(batch, hidden)}.
 Returns the first token's hidden state \verb{(B, H)} from a \verb{(B, L, H)} tensor.
 Used for models whose \verb{1_Pooling/config.json} sets
 \code{pooling_mode_cls_token = true} (e.g. some BGE and GTE variants).
+}
+\examples{
+\dontrun{
+  enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  tokens <- enc$tokenizer$encode_batch(c("hello world"))
+  ids    <- torch::torch_tensor(matrix(tokens[[1L]]$ids, nrow = 1L),
+                                 dtype = torch::torch_long())
+  mask   <- torch::torch_tensor(matrix(tokens[[1L]]$attention_mask, nrow = 1L),
+                                 dtype = torch::torch_long())
+  hidden <- enc$model(ids, mask)
+  cls_pool(hidden)
+}
 }

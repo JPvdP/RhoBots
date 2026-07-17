@@ -19,3 +19,13 @@ embedding.
 \description{
 Project new data using a fitted dimensionality-reduction model
 }
+\examples{
+\dontrun{
+  m    <- umap_reduction(n_neighbors = 5L, n_components = 2L)
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb  <- embed_texts(enc, c("first doc", "second doc", "third doc"))
+  res  <- dim_reduce(m, emb)
+  new_emb <- embed_texts(enc, c("new document"))
+  dim_project(res$model, new_emb)
+}
+}

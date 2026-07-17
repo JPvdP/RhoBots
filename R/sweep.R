@@ -1,5 +1,5 @@
 # =============================================================================
-# sweep.R — Parameter sweep over BERTopic hyperparameters
+# sweep.R  --  Parameter sweep over BERTopic hyperparameters
 # =============================================================================
 
 # Internal: resolve encoders + embeddings into a named list of embedding matrices.
@@ -96,6 +96,14 @@
 #'   \item{\code{sampled}}{Logical: whether a random sample was drawn.}
 #'   \item{\code{param_names}}{Character vector of swept parameter names.}
 #' }
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb <- embed_texts(enc, abstracts, normalize = TRUE)
+#'   sw  <- sweep_topics(abstracts, embeddings = emb,
+#'                        n_neighbors = c(5L, 15L), min_pts = c(5L, 10L))
+#'   visualize_sweep(sw)
+#' }
 #' @export
 sweep_topics <- function(docs,
                           encoders        = NULL,
@@ -186,13 +194,13 @@ sweep_topics <- function(docs,
                             top_n       = quality_top_n,
                             sample_size = quality_sample)
       if (verbose)
-        message(sprintf("    → %d topics  sil=%.3f  noise=%.0f%%",
+        message(sprintf("    -> %d topics  sil=%.3f  noise=%.0f%%",
                         as.integer(q_i$n_topics),
                         q_i$silhouette$global %||% NA_real_,
                         100 * q_i$distribution$noise_ratio))
       list(q = q_i, error = NA_character_)
     }, error = function(e) {
-      if (verbose) message("    → ERROR: ", conditionMessage(e))
+      if (verbose) message("    -> ERROR: ", conditionMessage(e))
       list(q = NULL, error = conditionMessage(e))
     })
   }
@@ -236,7 +244,7 @@ sweep_topics <- function(docs,
       if (length(ok) > 0L) {
         best <- results[ok[which.max(results$silhouette[ok])], , drop = FALSE]
       } else {
-        # No run met the constraint — fall back to the run with the most topics.
+        # No run met the constraint  --  fall back to the run with the most topics.
         best_met_constraint <- FALSE
         nt_valid <- valid[!is.na(results$n_topics[valid])]
         best <- results[nt_valid[which.max(results$n_topics[nt_valid])], ,
@@ -298,7 +306,7 @@ print.topic_sweep <- function(x, ...) {
     met      <- isTRUE(x$best_met_constraint)
     sel_note <- if (!is.null(x$min_topics))
       if (met) "  (constraint met)"
-      else     "  *** constraint NOT met — no run reached min_topics ***"
+      else     "  *** constraint NOT met  --  no run reached min_topics ***"
     else ""
     cat("\n  Best run", sel_note, ":\n", sep = "")
     if ("model" %in% x$param_names)
@@ -324,7 +332,7 @@ print.topic_sweep <- function(x, ...) {
 #'
 #' \code{n_topics} is always shown as the first column.  When a
 #' \code{min_topics} constraint was passed to \code{\link{sweep_topics}}, rows
-#' that did not meet it are prefixed with \code{"⊘ "} in the row labels.
+#' that did not meet it are prefixed with \code{"[x] "} in the row labels.
 #'
 #' @param sweep A \code{topic_sweep} object from \code{\link{sweep_topics}}.
 #' @param metrics Character vector selecting which columns of
@@ -333,6 +341,14 @@ print.topic_sweep <- function(x, ...) {
 #' @param width,height Plot dimensions in pixels.  Height auto-scales to the
 #'   number of runs when \code{NULL}.
 #' @return A \code{plotly} figure object.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   emb <- embed_texts(enc, abstracts, normalize = TRUE)
+#'   sw  <- sweep_topics(abstracts, embeddings = emb,
+#'                        n_neighbors = c(5L, 15L), min_pts = c(5L, 10L))
+#'   visualize_sweep(sw)
+#' }
 #' @export
 visualize_sweep <- function(sweep,
                              metrics = c("silhouette", "cohesion", "separation",
@@ -354,7 +370,7 @@ visualize_sweep <- function(sweep,
     msg <- paste0("All ", n_failed, " sweep run(s) failed.\n",
                   "First error: ", err_msg, "\n\n",
                   "Check sw$results$error for details.")
-    message("visualize_sweep: all runs failed — ", err_msg)
+    message("visualize_sweep: all runs failed  --  ", err_msg)
     return(
       plotly::plot_ly(width = width %||% 900L, height = 300L) |>
       plotly::layout(
@@ -377,7 +393,7 @@ visualize_sweep <- function(sweep,
 
   # --- Row labels -------------------------------------------------------------
   # When a min_topics constraint was set, prefix rows that didn't meet it
-  # with "⊘ " so users can immediately spot which combinations are unusable.
+  # with "[x] " so users can immediately spot which combinations are unusable.
   multi_model  <- length(unique(df$model)) > 1L
   min_topics   <- sweep$min_topics
   meets_constraint <- if (!is.null(min_topics) && "n_topics" %in% names(df))
@@ -386,7 +402,7 @@ visualize_sweep <- function(sweep,
     rep(TRUE, n_runs)
 
   row_lbls <- paste0(
-    ifelse(meets_constraint, "  ", "⊘ "),
+    ifelse(meets_constraint, "  ", "[x] "),
     if (multi_model) paste0(df$model, " | ") else "",
     "nbr=",  df$n_neighbors,
     " cmp=", df$n_components,
@@ -394,7 +410,7 @@ visualize_sweep <- function(sweep,
   )
 
   # --- Normalise metrics (direction-aware) ------------------------------------
-  # Metrics where LOWER raw value = BETTER → invert before normalising
+  # Metrics where LOWER raw value = BETTER -> invert before normalising
   invert_set <- c("separation", "jaccard", "noise_pct")
 
   # Human-readable column names and hover labels
@@ -402,10 +418,10 @@ visualize_sweep <- function(sweep,
     n_topics   = "Topics\nfound",
     silhouette = "Silhouette",
     cohesion   = "Cohesion",
-    separation = "Separation\n(↓ raw)",
-    jaccard    = "Vocab\noverlap\n(↓ raw)",
+    separation = "Separation\n(v raw)",
+    jaccard    = "Vocab\noverlap\n(v raw)",
     entropy    = "Size\nentropy",
-    noise_pct  = "Noise %\n(↓ raw)"
+    noise_pct  = "Noise %\n(v raw)"
   )
 
   .minmax <- function(v) {
@@ -432,7 +448,7 @@ visualize_sweep <- function(sweep,
   if (length(flat_cols) > 0L)
     message("Note: all runs produced identical values for: ",
             paste(flat_cols, collapse = ", "),
-            " — heatmap colours are uniform for those columns ",
+            "  --  heatmap colours are uniform for those columns ",
             "(raw values still shown in cell text).")
 
   # --- Cell text (raw values displayed inside each cell) ----------------------
@@ -468,7 +484,7 @@ visualize_sweep <- function(sweep,
   } else NULL
 
   best_label <- if (!is.null(best_row)) {
-    if (isTRUE(sweep$best_met_constraint)) "  ★ best" else "  ★ best (fallback)"
+    if (isTRUE(sweep$best_met_constraint)) "  * best" else "  * best (fallback)"
   } else NULL
 
   # --- Build heatmap ----------------------------------------------------------

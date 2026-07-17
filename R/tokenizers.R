@@ -1,5 +1,5 @@
 # =============================================================================
-# tokenizers.R — Fallback tokenizer for older BERT models that ship vocab.txt
+# tokenizers.R  --  Fallback tokenizer for older BERT models that ship vocab.txt
 # but not tokenizer.json.  Wraps the CRAN `wordpiece` package to mimic the
 # interface of `tok::tokenizer` so the rest of the pipeline doesn't have to
 # know which kind of tokenizer is in use.

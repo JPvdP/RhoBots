@@ -44,7 +44,7 @@ in the c-TF-IDF step (default \code{c(1L, 2L)}).}
 
 \item{top_n_terms}{Number of c-TF-IDF terms stored per topic (default 10).}
 
-\item{extra_stopwords}{Additional stopwords — character vector, file path,
+\item{extra_stopwords}{Additional stopwords  --  character vector, file path,
 or data frame (same formats accepted by \code{\link{fit_bertopic}}).}
 
 \item{verbose}{Print progress messages (default \code{TRUE}).}
@@ -64,6 +64,17 @@ are labelled as noise (\code{-1}).
 The returned object is a full \code{bertopic_fit} compatible with all
 Rhobots accessor and visualisation functions (\code{get_topic_info()},
 \code{visualize_barchart()}, \code{topic_quality()}, etc.).
+}
+\examples{
+\dontrun{
+  enc    <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  labels <- c(
+    "Climate change" = "carbon emissions global warming climate",
+    "Machine learning" = "neural network deep learning model training"
+  )
+  fit <- zero_shot_topics(abstracts, labels = labels, encoder = enc)
+  get_topic_info(fit)
+}
 }
 \seealso{
 \code{\link{fit_bertopic}}, \code{\link{guided_fit_bertopic}}

@@ -33,5 +33,14 @@ similarities to every topic centroid.}
 \description{
 Embeds new documents (or accepts pre-computed embeddings) and assigns each
 to the nearest topic centroid by cosine similarity.  Noise (\code{-1}) is
-never assigned as a target — all new documents receive a real topic.
+never assigned as a target  --  all new documents receive a real topic.
+}
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+  pred <- predict(fit, new_docs = c("new paper about deep learning"),
+                  encoder = enc)
+  pred$topics
+}
 }

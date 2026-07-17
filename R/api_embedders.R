@@ -1,8 +1,8 @@
 # =============================================================================
-# api_embedders.R — API-based embedding backends (OpenAI, Cohere)
+# api_embedders.R  --  API-based embedding backends (OpenAI, Cohere)
 #
 # Returns `api_embedder` objects compatible with embed_texts(),
-# embed_texts_cached(), and fit_bertopic() — no torch required.
+# embed_texts_cached(), and fit_bertopic()  --  no torch required.
 # =============================================================================
 
 #' Load an OpenAI embedding model
@@ -15,9 +15,9 @@
 #'
 #' @param model OpenAI embedding model name.
 #'   \itemize{
-#'     \item `"text-embedding-3-small"` (default) — 1536-d, fast and cheap
-#'     \item `"text-embedding-3-large"` — 3072-d, highest quality
-#'     \item `"text-embedding-ada-002"` — legacy 1536-d model
+#'     \item `"text-embedding-3-small"` (default)  --  1536-d, fast and cheap
+#'     \item `"text-embedding-3-large"`  --  3072-d, highest quality
+#'     \item `"text-embedding-ada-002"`  --  legacy 1536-d model
 #'   }
 #' @param api_key API key.  Defaults to `Sys.getenv("OPENAI_API_KEY")`.
 #' @param dimensions Optional integer to request a reduced output dimension
@@ -61,17 +61,17 @@ load_openai_embedder <- function(model      = "text-embedding-3-small",
 #'
 #' @param model Cohere embedding model name.
 #'   \itemize{
-#'     \item `"embed-english-v3.0"` (default) — 1024-d English
-#'     \item `"embed-multilingual-v3.0"` — 1024-d, 100+ languages
-#'     \item `"embed-english-light-v3.0"` — 384-d, faster/cheaper
+#'     \item `"embed-english-v3.0"` (default)  --  1024-d English
+#'     \item `"embed-multilingual-v3.0"`  --  1024-d, 100+ languages
+#'     \item `"embed-english-light-v3.0"`  --  384-d, faster/cheaper
 #'   }
 #' @param api_key API key.  Defaults to `Sys.getenv("COHERE_API_KEY")`.
 #' @param input_type Cohere input type controlling the embedding space used.
 #'   \itemize{
-#'     \item `"search_document"` (default) — for indexing documents
-#'     \item `"search_query"` — for embedding queries
-#'     \item `"clustering"` — optimized for clustering
-#'     \item `"classification"` — optimized for classification
+#'     \item `"search_document"` (default)  --  for indexing documents
+#'     \item `"search_query"`  --  for embedding queries
+#'     \item `"clustering"`  --  optimized for clustering
+#'     \item `"classification"`  --  optimized for classification
 #'   }
 #' @return An `api_embedder` object.
 #' @export

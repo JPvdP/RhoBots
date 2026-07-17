@@ -13,19 +13,19 @@ load_cohere_embedder(
 \arguments{
 \item{model}{Cohere embedding model name.
 \itemize{
-\item \code{"embed-english-v3.0"} (default) — 1024-d English
-\item \code{"embed-multilingual-v3.0"} — 1024-d, 100+ languages
-\item \code{"embed-english-light-v3.0"} — 384-d, faster/cheaper
+\item \code{"embed-english-v3.0"} (default)  --  1024-d English
+\item \code{"embed-multilingual-v3.0"}  --  1024-d, 100+ languages
+\item \code{"embed-english-light-v3.0"}  --  384-d, faster/cheaper
 }}
 
 \item{api_key}{API key.  Defaults to \code{Sys.getenv("COHERE_API_KEY")}.}
 
 \item{input_type}{Cohere input type controlling the embedding space used.
 \itemize{
-\item \code{"search_document"} (default) — for indexing documents
-\item \code{"search_query"} — for embedding queries
-\item \code{"clustering"} — optimized for clustering
-\item \code{"classification"} — optimized for classification
+\item \code{"search_document"} (default)  --  for indexing documents
+\item \code{"search_query"}  --  for embedding queries
+\item \code{"clustering"}  --  optimized for clustering
+\item \code{"classification"}  --  optimized for classification
 }}
 }
 \value{

@@ -19,9 +19,12 @@ An \code{hdbscan_clustering} model object.
 HDBSCAN density clustering
 }
 \details{
-Default clustering model for \code{\link{fit_bertopic}}.  Uses a Borůvka
+Default clustering model for \code{\link{fit_bertopic}}.  Uses a Boruvka
 minimum spanning tree on the mutual-reachability kNN graph (Rcpp) instead
 of the naive Prim's algorithm in \code{dbscan::hdbscan()}, which avoids the
-O(n²) memory cost that causes OOM at ~30K+ documents.  Memory is O(n × k)
+O(n^2) memory cost that causes OOM at ~30K+ documents.  Memory is O(n x k)
 throughout, making it practical at 100K+ documents.
+}
+\examples{
+m <- hdbscan_clustering(min_pts = 5L)
 }

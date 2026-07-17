@@ -16,3 +16,12 @@ A numeric matrix.
 \description{
 Load an embedding matrix from disk
 }
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb  <- embed_texts(enc, c("doc one", "doc two"))
+  path <- tempfile(fileext = ".rds")
+  save_embeddings(emb, path)
+  load_embeddings(path)
+}
+}

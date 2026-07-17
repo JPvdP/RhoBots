@@ -1,5 +1,5 @@
 # =============================================================================
-# persistence.R — Structured save / load for bertopic_fit objects.
+# persistence.R  --  Structured save / load for bertopic_fit objects.
 #
 # Saves the fit to a directory with separate files for the heavy matrices so
 # that the model can be inspected or partially loaded without reading everything
@@ -10,11 +10,11 @@
 #'
 #' Writes a \code{bertopic_fit} object to a directory.  The fit is split into:
 #' \itemize{
-#'   \item \code{metadata.json} — human-readable summary (topic labels, counts,
+#'   \item \code{metadata.json}  --  human-readable summary (topic labels, counts,
 #'     parameters).
-#'   \item \code{fit.rds} — the full fit object minus the large matrices.
-#'   \item \code{embeddings.rds} — the document embedding matrix (optional).
-#'   \item \code{dtm.rds} — the sparse document-term matrix (optional).
+#'   \item \code{fit.rds}  --  the full fit object minus the large matrices.
+#'   \item \code{embeddings.rds}  --  the document embedding matrix (optional).
+#'   \item \code{dtm.rds}  --  the sparse document-term matrix (optional).
 #' }
 #' Splitting the heavy matrices means the directory can be browsed and the
 #' metadata inspected without loading gigabytes into R.
@@ -29,6 +29,12 @@
 #' @param compress Compress \code{.rds} files (default \code{TRUE}).
 #' @return Invisibly, the normalised \code{path}.
 #' @seealso \code{\link{load_bertopic}}
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   save_bertopic(fit, tempdir())
+#' }
 #' @export
 save_bertopic <- function(fit, path,
                            include_embeddings = TRUE,
@@ -83,6 +89,14 @@ save_bertopic <- function(fit, path,
 #' @param path Path to the directory created by \code{\link{save_bertopic}}.
 #' @return A \code{bertopic_fit} object.
 #' @seealso \code{\link{save_bertopic}}
+#' @examples
+#' \dontrun{
+#'   enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit  <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   path <- tempdir()
+#'   save_bertopic(fit, path)
+#'   fit2 <- load_bertopic(path)
+#' }
 #' @export
 load_bertopic <- function(path) {
   if (!dir.exists(path))

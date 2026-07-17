@@ -19,3 +19,6 @@ A \code{pca_reduction} model object.
 Wraps \code{stats::prcomp}.  Unlike UMAP, PCA is deterministic and fast,
 but often produces lower-quality cluster separation for text embeddings.
 }
+\examples{
+m <- pca_reduction(n_components = 3L)
+}

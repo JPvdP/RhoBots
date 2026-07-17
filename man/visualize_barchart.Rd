@@ -2,7 +2,7 @@
 % Please edit documentation in R/visualize.R
 \name{visualize_barchart}
 \alias{visualize_barchart}
-\title{Visualise documents in topic space}
+\title{Bar charts of top terms per topic}
 \usage{
 visualize_barchart(
   fit,
@@ -25,30 +25,19 @@ shows all non-noise topics.}
 
 \item{width, height}{Plot dimensions in pixels.  Auto-scaled to the grid
 size when \code{NULL}.}
-
-\item{dims}{Either \code{NULL} (default) to use the pre-computed 2-D UMAP
-layout stored in \code{fit$layout2d}, or an integer vector of length 2
-selecting columns from \code{fit$reduced}, e.g. \code{c(1, 3)} to plot
-dimension 1 against dimension 3 of the clustering UMAP space.}
-
-\item{label_topics}{Whether to annotate topic centroids with short labels
-(default \code{TRUE}).}
-
-\item{n_label_words}{Number of topic words to show in centroid annotations
-(default 3).}
-
-\item{point_size}{Marker size for document points (default 5).}
-
-\item{noise_color}{Hex colour for unassigned (\code{-1}) documents
-(default \code{"#cccccc"}).}
 }
 \value{
 A \code{plotly} figure object.
-
-A \code{plotly} figure object.
 }
 \description{
-Produces an interactive 2-D scatter plot (via \pkg{plotly}) with one point
-per document, coloured by topic.  Topic centroids are annotated with short
-labels.
+Produces a grid of horizontal bar charts (via \pkg{plotly}), one panel per
+topic, showing c-TF-IDF scores for the top \code{top_n} terms.  The best
+term is always at the top of each panel.
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  visualize_barchart(fit, top_n = 5L)
+}
 }

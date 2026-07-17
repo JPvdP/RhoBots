@@ -32,14 +32,21 @@ Invisibly, the normalised \code{path}.
 \description{
 Writes a \code{bertopic_fit} object to a directory.  The fit is split into:
 \itemize{
-\item \code{metadata.json} — human-readable summary (topic labels, counts,
+\item \code{metadata.json}  --  human-readable summary (topic labels, counts,
 parameters).
-\item \code{fit.rds} — the full fit object minus the large matrices.
-\item \code{embeddings.rds} — the document embedding matrix (optional).
-\item \code{dtm.rds} — the sparse document-term matrix (optional).
+\item \code{fit.rds}  --  the full fit object minus the large matrices.
+\item \code{embeddings.rds}  --  the document embedding matrix (optional).
+\item \code{dtm.rds}  --  the sparse document-term matrix (optional).
 }
 Splitting the heavy matrices means the directory can be browsed and the
 metadata inspected without loading gigabytes into R.
+}
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  save_bertopic(fit, tempdir())
+}
 }
 \seealso{
 \code{\link{load_bertopic}}

@@ -9,11 +9,19 @@ visualize_stability(stab, width = 550L, height = 500L)
 \arguments{
 \item{stab}{A \code{stability_result} from \code{\link{stability_analysis}}.}
 
-\item{width, height}{Plot dimensions in pixels (default 550 × 500).}
+\item{width, height}{Plot dimensions in pixels (default 550 x 500).}
 }
 \value{
 A \code{plotly} figure.
 }
 \description{
 Interactive heatmap of pairwise ARI scores
+}
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb  <- embed_texts(enc, abstracts)
+  stab <- stability_analysis(abstracts, emb, n_runs = 3L)
+  visualize_stability(stab)
+}
 }

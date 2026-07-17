@@ -11,6 +11,17 @@
 
 \item{...}{Unused.}
 }
+\value{
+Invisibly returns \code{x}.
+}
 \description{
 Print method for bertopic_flow objects
+}
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  flow <- fit_topics_over_time(enc, docs = abstracts,
+                               period_var = rep(c("A", "B"), each = 50L))
+  print(flow)
+}
 }

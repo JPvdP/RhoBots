@@ -30,13 +30,13 @@ emotion scores), and token classification (NER, POS tagging).
 \details{
 The task type and output format are auto-detected from \code{config.json}:
 \itemize{
-\item \code{architectures} containing \code{"ForTokenClassification"} → NER mode
-\item \code{problem_type = "regression"} → return raw numeric scores
-\item \code{problem_type = "multi_label_classification"} → sigmoid per label
-\item otherwise → softmax single-label classification
+\item \code{architectures} containing \code{"ForTokenClassification"} -> NER mode
+\item \code{problem_type = "regression"} -> return raw numeric scores
+\item \code{problem_type = "multi_label_classification"} -> sigmoid per label
+\item otherwise -> softmax single-label classification
 }
 
-Supported backbone architectures: the same as \code{\link[=load_hf_bert]{load_hf_bert()}} — BERT,
+Supported backbone architectures: the same as \code{\link[=load_hf_bert]{load_hf_bert()}}  --  BERT,
 RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT (backbone only), MPNet.
 }
 \examples{

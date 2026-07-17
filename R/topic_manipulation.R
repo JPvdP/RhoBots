@@ -1,9 +1,9 @@
 # =============================================================================
-# topic_manipulation.R — Post-fit operations on a bertopic_fit object.
+# topic_manipulation.R  --  Post-fit operations on a bertopic_fit object.
 #
-# reduce_topics()   — iteratively merge the most similar topics
-# reduce_outliers() — reassign noise (-1) documents to the nearest real topic
-# merge_topics()    — manually collapse a specific set of topics into one
+# reduce_topics()    --  iteratively merge the most similar topics
+# reduce_outliers()  --  reassign noise (-1) documents to the nearest real topic
+# merge_topics()     --  manually collapse a specific set of topics into one
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -85,13 +85,19 @@
 #'
 #' At each step the two non-noise topics whose centroids have the highest
 #' cosine similarity are merged.  The loop continues until the desired number
-#' of topics remains.  After the loop, topics are renumbered 0, 1, 2, … in
+#' of topics remains.  After the loop, topics are renumbered 0, 1, 2, ... in
 #' order of their (post-merge) IDs and all derived state is recomputed.
 #'
 #' @param fit A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.
 #' @param nr_topics Target number of non-noise topics.
 #' @param verbose Print progress messages (default \code{TRUE}).
 #' @return An updated \code{bertopic_fit} with renumbered topics.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   fit <- reduce_topics(fit, nr_topics = 5L)
+#' }
 #' @export
 reduce_topics <- function(fit, nr_topics, verbose = TRUE) {
   if (nr_topics < 1L) stop("nr_topics must be at least 1.")
@@ -161,6 +167,12 @@ reduce_topics <- function(fit, nr_topics, verbose = TRUE) {
 #'   Default \code{0.0} reassigns all noise documents.
 #' @param verbose Print a reassignment summary (default \code{TRUE}).
 #' @return An updated \code{bertopic_fit}.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   fit <- reduce_outliers(fit, threshold = 0.1)
+#' }
 #' @export
 reduce_outliers <- function(fit, strategy = "embeddings", threshold = 0.0,
                              verbose = TRUE) {
@@ -171,7 +183,7 @@ reduce_outliers <- function(fit, strategy = "embeddings", threshold = 0.0,
     return(fit)
   }
   if (nrow(fit$topic_centroids) == 0L)
-    stop("No non-noise topics in this fit — nothing to assign to.")
+    stop("No non-noise topics in this fit  --  nothing to assign to.")
 
   if (strategy == "embeddings") {
     emb   <- fit$embeddings[noise_idx, , drop = FALSE]
@@ -252,6 +264,12 @@ reduce_outliers <- function(fit, strategy = "embeddings", threshold = 0.0,
 #' @param fit A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.
 #' @param topics_to_merge Integer vector of at least two topic IDs to merge.
 #' @return An updated \code{bertopic_fit}.
+#' @examples
+#' \dontrun{
+#'   enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+#'   fit <- fit_bertopic(docs = abstracts, encoder = enc)
+#'   fit <- merge_topics(fit, topics_to_merge = c(0L, 1L))
+#' }
 #' @export
 merge_topics <- function(fit, topics_to_merge) {
   topics_to_merge <- sort(unique(as.integer(topics_to_merge)))

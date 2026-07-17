@@ -19,3 +19,10 @@ All topics in \code{topics_to_merge} are combined into the one with the
 smallest ID.  All derived state (c-TF-IDF terms, labels, centroids,
 representative docs) is recomputed from the merged assignments.
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  fit <- merge_topics(fit, topics_to_merge = c(0L, 1L))
+}
+}

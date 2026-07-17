@@ -8,7 +8,7 @@ cvalue_representation(max_n = 4L, threshold = 0, min_freq = 2L)
 }
 \arguments{
 \item{max_n}{Maximum n-gram length to evaluate (default 4).  Longer n-grams
-are more informative but also rarer; values of 3–5 cover most terminology.}
+are more informative but also rarer; values of 3 - 5 cover most terminology.}
 
 \item{threshold}{Minimum C-value score for a multi-word term to be retained
 (default 0).  Increase to surface only well-established compound terms.}
@@ -24,6 +24,9 @@ Use as the \code{representation_model} argument in \code{\link{fit_bertopic}}
 to select the n-gram vocabulary using the C-value algorithm (Frantzi et al.
 2000) rather than plain document-frequency filtering.  Unigrams are always
 kept alongside the C-value-selected multi-word terms.
+}
+\examples{
+m <- cvalue_representation(max_n = 3L, threshold = 0.5)
 }
 \seealso{
 \code{\link{cvalue_terms}}, \code{\link{fit_bertopic}},

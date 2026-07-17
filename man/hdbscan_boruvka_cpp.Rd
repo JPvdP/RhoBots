@@ -7,9 +7,9 @@
 hdbscan_boruvka_cpp(knn_idx, knn_dist, min_pts)
 }
 \arguments{
-\item{knn_idx}{Integer matrix (n × k), 1-indexed nearest-neighbour indices.}
+\item{knn_idx}{Integer matrix (n x k), 1-indexed nearest-neighbour indices.}
 
-\item{knn_dist}{Numeric matrix (n × k), corresponding distances.}
+\item{knn_dist}{Numeric matrix (n x k), corresponding distances.}
 
 \item{min_pts}{Integer minimum cluster size / core-distance order.}
 }
@@ -22,3 +22,4 @@ Returns a list with \code{labels} (integer vector, 0 = noise) and
 \code{n_mst_edges} (number of MST edges built).  When \code{n_mst_edges < n-1}
 the kNN graph was disconnected; the R wrapper retries with larger k.
 }
+\keyword{internal}

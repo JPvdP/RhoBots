@@ -104,3 +104,12 @@ pre-computed matrices:
     n_neighbors = c(5, 15), min_pts = c(5, 10))
 }
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  emb <- embed_texts(enc, abstracts, normalize = TRUE)
+  sw  <- sweep_topics(abstracts, embeddings = emb,
+                       n_neighbors = c(5L, 15L), min_pts = c(5L, 10L))
+  visualize_sweep(sw)
+}
+}

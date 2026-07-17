@@ -20,3 +20,10 @@ vectors (all topics).
 Representative documents are the three training documents whose embeddings
 lie closest (cosine similarity) to the topic centroid.
 }
+\examples{
+\dontrun{
+  enc <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  fit <- fit_bertopic(docs = abstracts, encoder = enc)
+  get_representative_docs(fit, topic = 0L)
+}
+}

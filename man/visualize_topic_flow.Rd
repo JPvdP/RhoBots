@@ -31,5 +31,13 @@ A \code{plotly} figure.
 Produces an interactive Plotly Sankey diagram where each column represents
 one time period, each node is a topic (sized by document count), and each
 link is a cross-period topic similarity above the fitted threshold.
-Link thickness scales with \code{similarity × min(count_from, count_to)}.
+Link thickness scales with \code{similarity x min(count_from, count_to)}.
+}
+\examples{
+\dontrun{
+  enc  <- load_hf_bert("sentence-transformers/all-MiniLM-L6-v2")
+  flow <- fit_topics_over_time(enc, docs = abstracts,
+                               period_var = rep(c("A", "B"), each = 50L))
+  visualize_topic_flow(flow)
+}
 }
