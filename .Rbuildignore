@@ -30,3 +30,11 @@
 ^validate_embeddings\.R$
 ^validate_embeddings_py\.py$
 ^Rhobots_.*\.tar\.gz$
+^Asia_abstracts\.csv$
+^North_America_abstracts\.csv$
+^Python_R_comparison\.png$
+^fig$
+^fig/
+^hdbscan_validation\.tex$
+^paper_figures\.R$
+^tests/testthat/test-boruvka\.R$

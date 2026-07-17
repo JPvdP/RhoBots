@@ -1,6 +1,6 @@
 Package: Rhobots
 Title: BERTopic-Style Topic Modeling Without Python
-Version: 0.1.5
+Version: 0.1.6
 Authors@R:
     person("J.P.G.", "van der Pol", , "j.p.g.vanderpol@uu.nl", role = c("aut", "cre"))
 Description: Implements the BERTopic pipeline (Grootendorst 2022) natively in R:

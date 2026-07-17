@@ -4,13 +4,37 @@
 \alias{hdbscan_clustering}
 \title{HDBSCAN clustering}
 \usage{
-hdbscan_clustering(min_pts = 10L, method = c("eom", "leaf"))
+hdbscan_clustering(
+  min_pts = 10L,
+  method = c("eom", "leaf"),
+  knn = c("balltree", "kdtree", "adaptive", "fixed")
+)
 }
 \arguments{
 \item{min_pts}{Minimum cluster size and core-distance order (default 10).}
 
 \item{method}{\code{"eom"} (excess of mass, default) or \code{"leaf"}.
 The leaf method uses \code{dbscan::hdbscan()} on small corpora only.}
+
+\item{knn}{kNN graph construction strategy for the Boruvka MST step.
+\describe{
+\item{\code{"balltree"}}{(default) Ball-tree dual-tree Borůvka.  Builds a
+Ball-tree from the data: bounding hyperspheres prune more effectively than
+axis-aligned boxes in ≥3-D, keeping Borůvka rounds O(n log n) even on
+data without strong cluster separation.  kNN results from the
+core-distance pass are reused as a warm-up so no extra tree traversal is
+needed.  Fastest for real corpus data; recommended default.}
+\item{\code{"kdtree"}}{KD-tree dual-tree Borůvka (nanoflann).  Same
+algorithm as \code{"balltree"} but with axis-aligned bounding boxes.
+Faster to build; pruning degrades in higher dimensions (≥4-D).  Use when
+comparing against the \code{"balltree"} or for debugging.}
+\item{\code{"adaptive"}}{No-tree fallback: builds a kNN graph with
+\code{dbscan::kNN()} starting at \code{k = max(min_pts, 15)} and doubles
+until the MST is fully connected.  Guaranteed connectivity; useful when
+the tree-based methods miss an isolated island cluster.}
+\item{\code{"fixed"}}{Like \code{"adaptive"} but caps \code{k} at 200.
+Fastest; occasionally misses island clusters beyond the cap.}
+}}
 }
 \value{
 An \code{hdbscan_clustering} model object.
@@ -27,4 +51,5 @@ throughout, making it practical at 100K+ documents.
 }
 \examples{
 m <- hdbscan_clustering(min_pts = 5L)
+m_kd <- hdbscan_clustering(min_pts = 5L, knn = "kdtree")
 }

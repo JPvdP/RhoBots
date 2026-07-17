@@ -217,17 +217,42 @@ dim_project.no_reduction <- function(model, X) X
 #' @param min_pts Minimum cluster size and core-distance order (default 10).
 #' @param method \code{"eom"} (excess of mass, default) or \code{"leaf"}.
 #'   The leaf method uses \code{dbscan::hdbscan()} on small corpora only.
+#' @param knn kNN graph construction strategy for the Boruvka MST step.
+#'   \describe{
+#'     \item{\code{"balltree"}}{(default) Ball-tree dual-tree Borůvka.  Builds a
+#'       Ball-tree from the data: bounding hyperspheres prune more effectively than
+#'       axis-aligned boxes in ≥3-D, keeping Borůvka rounds O(n log n) even on
+#'       data without strong cluster separation.  kNN results from the
+#'       core-distance pass are reused as a warm-up so no extra tree traversal is
+#'       needed.  Fastest for real corpus data; recommended default.}
+#'     \item{\code{"kdtree"}}{KD-tree dual-tree Borůvka (nanoflann).  Same
+#'       algorithm as \code{"balltree"} but with axis-aligned bounding boxes.
+#'       Faster to build; pruning degrades in higher dimensions (≥4-D).  Use when
+#'       comparing against the \code{"balltree"} or for debugging.}
+#'     \item{\code{"adaptive"}}{No-tree fallback: builds a kNN graph with
+#'       \code{dbscan::kNN()} starting at \code{k = max(min_pts, 15)} and doubles
+#'       until the MST is fully connected.  Guaranteed connectivity; useful when
+#'       the tree-based methods miss an isolated island cluster.}
+#'     \item{\code{"fixed"}}{Like \code{"adaptive"} but caps \code{k} at 200.
+#'       Fastest; occasionally misses island clusters beyond the cap.}
+#'   }
 #' @return An \code{hdbscan_clustering} model object.
 #' @examples
 #' m <- hdbscan_clustering(min_pts = 5L)
+#' m_kd <- hdbscan_clustering(min_pts = 5L, knn = "kdtree")
 #' @export
-hdbscan_clustering <- function(min_pts = 10L, method = c("eom", "leaf")) {
+hdbscan_clustering <- function(min_pts = 10L,
+                               method  = c("eom", "leaf"),
+                               knn     = c("balltree", "kdtree", "adaptive", "fixed")) {
   method <- match.arg(method)
+  knn    <- match.arg(knn)
   structure(
-    list(min_pts = as.integer(min_pts), method = method, fitted = NULL),
+    list(min_pts = as.integer(min_pts), method = method, knn = knn,
+         fitted = NULL),
     class = c("hdbscan_clustering", "cluster_model")
   )
 }
+
 
 #' @export
 cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
@@ -243,16 +268,30 @@ cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
   }
 
   # EOM method: Boruvka MST via Rcpp  --  O(n x k) memory, scales to 100K+
-  # Pre-compute kNN with dbscan::kNN() (uses kd-trees; fast and low-memory).
-  # If the kNN graph is disconnected (nm < n-1), double k and retry until the
-  # MST is complete or k exceeds the cap.
-  n     <- nrow(X)
+  #
+  # knn = "fixed"    : pre-build kNN (k capped at 200); fast default.
+  # knn = "adaptive" : same but k grows without cap until MST is fully connected.
+  # knn = "kdtree"   : true KD-tree Boruvka (nanoflann); no fixed k, single tree
+  #                    build, on-demand queries per round — equivalent to Python
+  #                    hdbscan's boruvka_kdtree.
+  n       <- nrow(X)
+  knn_str <- if (is.null(model$knn)) "balltree" else model$knn
+
+  if (knn_str %in% c("balltree", "kdtree")) {
+    result <- if (knn_str == "balltree") hdbscan_balltree_cpp(X, min_pts)
+              else                       hdbscan_kdtree_cpp(X, min_pts)
+    labels <- result$labels
+    labels[labels == 0L] <- -1L
+    return(list(labels = labels, model = model))
+  }
+
+  # "fixed" / "adaptive": pre-build kNN with dbscan::kNN(), retry on disconnect.
   k     <- max(min_pts, 15L)
-  k_cap <- min(n - 1L, 200L)
+  k_cap <- if (knn_str == "adaptive") n - 1L else min(n - 1L, 200L)
 
   repeat {
-    knn    <- dbscan::kNN(X, k = k, sort = TRUE)
-    result <- hdbscan_boruvka_cpp(knn$id, knn$dist, min_pts)
+    knn_graph <- dbscan::kNN(X, k = k, sort = TRUE)
+    result    <- hdbscan_boruvka_cpp(knn_graph$id, knn_graph$dist, min_pts)
     if (result$n_mst_edges >= n - 1L || k >= k_cap) break
     k <- min(k * 2L, k_cap)
     message(sprintf(
@@ -261,7 +300,7 @@ cluster_docs.hdbscan_clustering <- function(model, X, seed = 42L) {
   }
 
   labels            <- result$labels
-  labels[labels == 0L] <- -1L    # match dbscan convention: 0 -> -1 for noise
+  labels[labels == 0L] <- -1L
 
   list(labels = labels, model = model)
 }
