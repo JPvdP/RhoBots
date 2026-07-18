@@ -1,0 +1,28 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Add this entry to the `navbar: right:` (or `left:`) section of your
+# NetworkIsLife _quarto.yml to create the Rhobots dropdown.
+#
+# Files to copy into your NetworkIsLife repo root:
+#   rhobots_site.qmd    → rename to rhobots.qmd
+#   tutorial.qmd
+#   tutorial_style.css
+#   umap_explainer.qmd
+#   hdbscan_explainer.qmd
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Paste inside your existing navbar: section:
+navbar:
+  left:
+    # ... your existing nav items ...
+    - text: "Rhobots"
+      menu:
+        - text: "Overview"
+          href: rhobots.qmd
+        - text: "---"
+        - text: "Tutorial"
+          href: tutorial.qmd
+        - text: "---"
+        - text: "How UMAP Works"
+          href: umap_explainer.qmd
+        - text: "How HDBSCAN Works"
+          href: hdbscan_explainer.qmd
