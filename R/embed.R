@@ -329,7 +329,6 @@ embed_texts.bert_encoder <- function(encoder, texts,
   # length texts together, dramatically reducing wasted padding computation.
   # We record the original order so results are returned in the input order.
   order_idx    <- order(nchar(texts, type = "bytes"))
-  restore_idx  <- order(order_idx)
   texts_sorted <- texts[order_idx]
 
   # Pre-allocate the result matrix  --  avoids repeated rbind across batches.
@@ -349,8 +348,10 @@ embed_texts.bert_encoder <- function(encoder, texts,
     rm(enc)
 
     # Allocate result matrix on first batch now that hidden_size is known.
+    # Write rows straight to their original positions, so no reordering copy
+    # of the full result is needed at the end.
     if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(batch_arr))
-    result[start:end, ] <- batch_arr
+    result[order_idx[start:end], ] <- batch_arr
 
     n_batch <- n_batch + 1L
     if (gc_every > 0L && n_batch %% gc_every == 0L) .release_memory(device)
@@ -359,8 +360,7 @@ embed_texts.bert_encoder <- function(encoder, texts,
   }
   .release_memory(device)
 
-  # Restore original document order before returning.
-  result[restore_idx, , drop = FALSE]
+  result
 }
 
 
@@ -564,20 +564,19 @@ embed_texts.default <- function(encoder, texts, ...) {
     block_res <- rowsum(chunk_emb, chunk_origin, reorder = TRUE) /
                  tabulate(chunk_origin, nbins = b_end - b_start + 1L)
 
+    # L2 normalise the aggregated document vectors.  Done per block (rows are
+    # independent) so the full result matrix is never copied.
+    if (normalize) {
+      norms             <- sqrt(rowSums(block_res^2))
+      norms[norms == 0] <- 1   # avoid dividing a zero vector by zero
+      block_res         <- block_res / norms
+    }
+
     if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(block_res))
     result[b_start:b_end, ] <- block_res
     rm(chunk_ids, chunk_emb, block_res)
   }
   .release_memory(device)
 
-  # L2 normalise the aggregated document vectors.
-  # We do this in R rather than torch because result is already an R matrix.
-  if (normalize) {
-    norms          <- sqrt(rowSums(result^2))
-    norms[norms == 0] <- 1   # avoid dividing a zero vector by zero
-    result         <- result / norms
-  }
-
-  dimnames(result) <- NULL
   result   # (n_texts x hidden_size) numeric matrix
 }
