@@ -23,7 +23,9 @@
 //
 // Step 1 — Core distances
 //   The core distance of point i is its distance to its min_pts-th nearest
-//   neighbour.  Intuitively: it measures how "lonely" point i is.  A point
+//   neighbour, counting i itself as the first (so the (min_pts-1)-th other
+//   point).  This matches Python hdbscan (min_samples) and dbscan::hdbscan()
+//   (minPts).  Intuitively: it measures how "lonely" point i is.  A point
 //   deep inside a dense cluster has a small core distance; an isolated point
 //   far from any neighbours has a large core distance.
 //
@@ -366,13 +368,16 @@ List hdbscan_boruvka_cpp(IntegerMatrix knn_idx,
   const int k = knn_idx.ncol();   // number of nearest neighbours per document
 
   // ── Step 1: Core distances ────────────────────────────────────────────────
-  // core[i] = distance from point i to its min_pts-th nearest neighbour.
-  // knn_dist is sorted (column 0 = nearest, column k-1 = furthest), so the
-  // min_pts-th neighbour is at column index min_pts-1.
+  // core[i] = distance from point i to its min_pts-th nearest neighbour,
+  // counting i itself (as Python hdbscan and dbscan::hdbscan() do).
+  // knn_dist excludes i and is sorted (column 0 = nearest other point), so
+  // the (min_pts-1)-th other point is at column index min_pts-2.  For
+  // min_pts <= 1 the point itself is the neighbour and the core distance is 0.
   // We clamp to k-1 in case k < min_pts (shouldn't happen in practice, but safe).
-  const int cc = std::min(min_pts - 1, k - 1);
-  vector<double> core(n);
-  for (int i = 0; i < n; i++) core[i] = knn_dist(i, cc);
+  const int cc = std::min(min_pts - 2, k - 1);
+  vector<double> core(n, 0.0);
+  if (cc >= 0)
+    for (int i = 0; i < n; i++) core[i] = knn_dist(i, cc);
 
   // ── Step 2: Borůvka MST on mutual-reachability kNN graph ─────────────────
   vector<Edge> mst = boruvka_mst(knn_idx, knn_dist, core, n, k);
@@ -974,21 +979,18 @@ List hdbscan_kdtree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluster 
   tree.buildIndex();
 
   // ── Step 2: Core distances via KD-tree ───────────────────────────────────
-  // core[i] = distance to i's min_pts-th nearest neighbor (excluding i itself).
-  // Query min_pts+1 neighbors; the first returned is i itself (dist 0).
-  {
-    // Sanity: if min_pts >= n, clamp.
-  }
-  int kc = std::min(min_pts + 1, n);
-  vector<double> core(n);
-  {
+  // core[i] = distance to i's min_pts-th nearest neighbor, counting i itself
+  // (as Python hdbscan and dbscan::hdbscan() do).  The search returns i first
+  // (dist 0), so that neighbour is result index min_pts-1, clamped to n-1.
+  int kc = std::min(min_pts, n);
+  vector<double> core(n, 0.0);
+  if (kc >= 1) {
     vector<uint32_t> idx(kc);
     vector<double>   dsq(kc);
     vector<double> qpt(d);
     for (int i = 0; i < n; i++) {
       for (int dim = 0; dim < d; dim++) qpt[dim] = adaptor.data[i + dim * n];
       tree.knnSearch(qpt.data(), (size_t)kc, idx.data(), dsq.data());
-      // kc results: idx[0] = i (dist 0), idx[kc-1] = min_pts-th neighbor.
       core[i] = std::sqrt(dsq[kc - 1]);
     }
   }
@@ -1424,7 +1426,12 @@ List hdbscan_balltree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluste
   BallAnnotation ann = build_ball_annotation(raw, n, d, /*leaf_max=*/10);
 
   // ── Step 2: Core distances via Ball-tree kNN; store results for warm-up ──
+  // The search returns i itself first (dist 0).  The core distance is the
+  // min_pts-th neighbour counting i (as Python hdbscan and dbscan::hdbscan()
+  // do), i.e. result index min_pts-1.  We still query min_pts+1 neighbours
+  // because the extra one gives Borůvka's warm-up an extra candidate edge.
   const int kc = std::min(min_pts + 1, n);
+  const int ci = std::max(0, std::min(min_pts, n) - 1);
   vector<double>   core(n);
   vector<uint32_t> warm_idx((size_t)n * kc);
   vector<double>   warm_dsq((size_t)n * kc);
@@ -1434,7 +1441,7 @@ List hdbscan_balltree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluste
     vector<double>   dsq_buf(kc);
     for (int i = 0; i < n; i++) {
       bt_knn_search(ann, rm + (size_t)i * d, kc, idx_buf, dsq_buf);
-      core[i] = std::sqrt(dsq_buf[kc - 1]);  // dist to min_pts-th neighbor
+      core[i] = std::sqrt(dsq_buf[ci]);
       for (int t = 0; t < kc; t++) {
         warm_idx[(size_t)i * kc + t] = idx_buf[t];
         warm_dsq[(size_t)i * kc + t] = dsq_buf[t];
