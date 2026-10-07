@@ -199,6 +199,11 @@ cls_pool <- function(hidden) {
 #' @param chunk_overlap Number of token overlap between consecutive windows
 #'   when `chunk_strategy != "truncate"`. Default 0.
 #' @param verbose If `TRUE`, prints batch progress.
+#' @param gc_every Release memory held by finished batches every `gc_every`
+#'   batches (default 1).  Torch tensors live outside R's heap, so R does not
+#'   see how much memory they use and may not free them in time on large
+#'   corpora.  Higher values trade a little memory for slightly less overhead; `0`
+#'   disables the periodic cleanup.  Ignored for `api_embedder`.
 #' @param ... Not used; retained for S3 method compatibility.
 #' @return A numeric matrix with `length(texts)` rows and `hidden_size` cols.
 #' @export
@@ -268,7 +273,13 @@ embed_texts <- function(encoder, texts, ...) UseMethod("embed_texts")
 #
 #     g. Back to R   --  convert the GPU tensor to a standard R numeric array.
 #
-#  4. Stack rows   --  do.call(rbind, ...) assembles all batches into one matrix.
+#  4. Free memory   --  torch tensors live outside R's heap, so R's garbage
+#     collector cannot see how large they are and rarely runs on its own.
+#     Every `gc_every` batches we force a collection (and empty the CUDA
+#     cache) so finished batches are actually released.
+#
+#  5. Restore order   --  rows are written into a pre-allocated matrix in
+#     sorted order and permuted back to the input order at the end.
 # -----------------------------------------------------------------------------
 
 #' @rdname embed_texts
@@ -282,8 +293,10 @@ embed_texts.bert_encoder <- function(encoder, texts,
                                       chunk_strategy = c("truncate", "mean", "first"),
                                       chunk_overlap  = 0L,
                                       verbose        = interactive(),
+                                      gc_every       = 1L,
                                       ...) {
   chunk_strategy <- match.arg(chunk_strategy)
+  gc_every       <- as.integer(gc_every)
 
   # Resolve the prefix: explicit argument beats encoder-stored value.
   if (is.null(prefix)) prefix <- encoder$prefix %||% ""
@@ -293,7 +306,7 @@ embed_texts.bert_encoder <- function(encoder, texts,
   if (chunk_strategy != "truncate") {
     return(.embed_chunked(encoder, texts, batch_size, max_length, normalize,
                           device, chunk_strategy, as.integer(chunk_overlap),
-                          verbose))
+                          verbose, gc_every))
   }
 
   model     <- encoder$model
@@ -319,48 +332,79 @@ embed_texts.bert_encoder <- function(encoder, texts,
 
   # Pre-allocate the result matrix  --  avoids repeated rbind across batches.
   # hidden_size is not known until after the first forward pass, so we fill it in then.
-  result     <- NULL
-  hidden_size <- NULL
+  result  <- NULL
+  n_batch <- 0L
 
   for (start in seq(1L, n, by = batch_size)) {
     end   <- min(start + batch_size - 1L, n)
-    batch <- texts_sorted[start:end]
 
-    enc   <- tokenizer$encode_batch(batch)
-    ids   <- lapply(enc, function(e) e$ids)
-    masks <- lapply(enc, function(e) e$attention_mask)
-
-    Lmax  <- max(vapply(ids, length, integer(1L)))
-    pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
-    ids_m <- do.call(rbind, lapply(ids,   pad))
-    msk_m <- do.call(rbind, lapply(masks, pad))
-
-    input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
-    attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
-
-    torch::with_no_grad({
-      hidden <- model(input_ids, attn_mask)
-      pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
-      if (normalize) pooled <- torch::nnf_normalize(pooled, p = 2, dim = 2)
-    })
-
-    batch_arr <- as.matrix(pooled$cpu())
+    enc   <- tokenizer$encode_batch(texts_sorted[start:end])
+    batch_arr <- .forward_batch(model,
+                                lapply(enc, function(e) e$ids),
+                                lapply(enc, function(e) e$attention_mask),
+                                pooling, normalize, device)
+    rm(enc)
 
     # Allocate result matrix on first batch now that hidden_size is known.
-    if (is.null(result)) {
-      hidden_size <- ncol(batch_arr)
-      result      <- matrix(0, nrow = n, ncol = hidden_size)
-    }
+    if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(batch_arr))
     result[start:end, ] <- batch_arr
+
+    n_batch <- n_batch + 1L
+    if (gc_every > 0L && n_batch %% gc_every == 0L) .release_memory(device)
 
     if (verbose) message(sprintf("  embedded %d / %d", end, n))
   }
+  .release_memory(device)
 
   # Restore original document order before returning.
   result[restore_idx, , drop = FALSE]
 }
 
 
+# -----------------------------------------------------------------------------
+# .forward_batch  --  one forward pass, returned as a plain R matrix
+#
+# Keeping the tensors local to this function means they become unreachable
+# as soon as it returns, so the next .release_memory() call can free them.
+# -----------------------------------------------------------------------------
+
+.forward_batch <- function(model, ids, masks, pooling, normalize, device) {
+  Lmax  <- max(vapply(ids, length, integer(1L)))
+  pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
+  ids_m <- do.call(rbind, lapply(ids,   pad))
+  msk_m <- do.call(rbind, lapply(masks, pad))
+
+  input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
+  attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
+
+  torch::with_no_grad({
+    hidden <- model(input_ids, attn_mask)
+    pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
+    if (normalize) pooled <- torch::nnf_normalize(pooled, p = 2, dim = 2)
+  })
+
+  as.matrix(pooled$cpu())
+}
+
+
+# -----------------------------------------------------------------------------
+# .release_memory  --  force R to finalise unreachable torch tensors
+#
+# A torch tensor looks like a tiny external pointer to R, even when it holds
+# hundreds of MB.  R therefore sees no memory pressure and postpones garbage
+# collection, letting dead batch tensors pile up.  gc() runs their finalisers;
+# on CUDA we additionally hand cached blocks back to the driver.
+# -----------------------------------------------------------------------------
+
+.release_memory <- function(device) {
+  gc(verbose = FALSE)
+  if (startsWith(as.character(device), "cuda") && torch::cuda_is_available()) {
+    torch::cuda_empty_cache()
+  }
+  invisible(NULL)
+}
+
+#' @rdname embed_texts
 #' @export
 embed_texts.default <- function(encoder, texts, ...) {
   stop("No embed_texts method for class '",
@@ -379,15 +423,16 @@ embed_texts.default <- function(encoder, texts, ...) {
 #
 # STRATEGY
 # --------
-# Rather than truncating, we:
+# Rather than truncating, we work through the corpus in blocks of documents
+# (so memory does not scale with corpus size) and for each block:
 #   1. Tokenize without truncation (up to the model's hard maximum).
 #   2. For texts that fit within max_length: use as-is (one chunk).
 #   3. For texts that exceed max_length: slide a window of max_length tokens
 #      over the body (stripping and re-adding [CLS] / [SEP] each time).
-#   4. Embed ALL chunks together in one batched forward pass.
+#   4. Embed the block's chunks in length-sorted batches.
 #   5. Aggregate per-document: average all chunk vectors (strategy="mean"),
 #      or use only the first chunk's vector (strategy="first").
-#   6. L2-normalise the final per-document vectors.
+# Finally the per-document vectors are L2-normalised.
 #
 # WHY PRESERVE [CLS] AND [SEP]?
 # The model was pre-trained to always see these special tokens at the sentence
@@ -401,7 +446,7 @@ embed_texts.default <- function(encoder, texts, ...) {
 # =============================================================================
 
 .embed_chunked <- function(encoder, texts, batch_size, max_length, normalize,
-                            device, strategy, overlap, verbose) {
+                            device, strategy, overlap, verbose, gc_every = 1L) {
   model     <- encoder$model
   tokenizer <- encoder$tokenizer
   pooling   <- encoder$pooling %||% "mean"
@@ -414,25 +459,32 @@ embed_texts.default <- function(encoder, texts, ...) {
   model_max <- encoder$config$max_position_embeddings %||% 512L
   tokenizer$enable_padding()
   tokenizer$enable_truncation(model_max)
-  all_enc <- tokenizer$encode_batch(texts)
 
-  # Build a flat list of all chunks across all documents.
-  # chunk_origin[i] = index of the original document that chunk i came from.
-  # This lets us reassemble per-document aggregations after batch embedding.
-  chunk_ids    <- list()
-  chunk_masks  <- list()
-  chunk_origin <- integer(0)
+  # Documents are processed in blocks so that only one block's token IDs and
+  # chunk lists are held in memory at a time, instead of the whole corpus.
+  n          <- length(texts)
+  block_size <- max(2048L, batch_size * 64L)
+  result     <- NULL
+  n_batch    <- 0L
 
-  for (i in seq_along(texts)) {
-    ids    <- all_enc[[i]]$ids
-    n_toks <- length(ids)
+  for (b_start in seq(1L, n, by = block_size)) {
+    b_end <- min(b_start + block_size - 1L, n)
+    if (verbose && n > block_size) {
+      message(sprintf("  documents %d - %d / %d", b_start, b_end, n))
+    }
 
-    if (n_toks <= max_length) {
+    all_enc <- tokenizer$encode_batch(texts[b_start:b_end])
+
+    # Split every document into chunks.  Each element of `per_doc` holds the
+    # chunk token-ID vectors for one document; chunk_origin[i] records which
+    # (block-local) document chunk i came from so we can reassemble later.
+    per_doc <- lapply(all_enc, function(e) {
+      ids    <- e$ids
+      n_toks <- length(ids)
+
       # Document fits in one chunk  --  use as-is.
-      chunk_ids    <- c(chunk_ids,    list(ids))
-      chunk_masks  <- c(chunk_masks,  list(all_enc[[i]]$attention_mask))
-      chunk_origin <- c(chunk_origin, i)
-    } else {
+      if (n_toks <= max_length) return(list(ids))
+
       # Extract special tokens from the first and last positions.
       # Standard tokenisers always place [CLS] first and [SEP] last.
       cls_id <- ids[1L]
@@ -454,74 +506,58 @@ embed_texts.default <- function(encoder, texts, ...) {
       starts <- seq(1L, length(body), by = stride)
       if (strategy == "first") starts <- starts[1L]   # only use the first window
 
-      for (s in starts) {
-        e     <- min(s + body_size - 1L, length(body))   # end of this window
-        chunk <- c(cls_id, body[s:e], sep_id)            # re-add special tokens
-
-        # All body tokens in the chunk are real (mask = 1).
-        chunk_ids    <- c(chunk_ids,    list(chunk))
-        chunk_masks  <- c(chunk_masks,  list(rep(1L, length(chunk))))
-        chunk_origin <- c(chunk_origin, i)
-      }
-    }
-  }
-
-  # Batch-embed all chunks (from all documents) together.
-  # Sort chunks by length for the same padding-efficiency reason as the main path.
-  n_chunks     <- length(chunk_ids)
-  chunk_order  <- order(vapply(chunk_ids, length, integer(1L)))
-  chunk_ids    <- chunk_ids[chunk_order]
-  chunk_masks  <- chunk_masks[chunk_order]
-  chunk_origin <- chunk_origin[chunk_order]
-
-  all_chunk_emb <- NULL
-
-  for (start in seq(1L, n_chunks, by = batch_size)) {
-    end   <- min(start + batch_size - 1L, n_chunks)
-    b_ids <- chunk_ids[start:end]
-    b_msk <- chunk_masks[start:end]
-
-    Lmax  <- max(vapply(b_ids, length, integer(1L)))
-    pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
-    ids_m <- do.call(rbind, lapply(b_ids, pad))
-    msk_m <- do.call(rbind, lapply(b_msk, pad))
-
-    input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
-    attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
-
-    torch::with_no_grad({
-      hidden <- model(input_ids, attn_mask)
-      pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
-      # Normalisation applied to the aggregated document vector, not individual chunks.
+      lapply(starts, function(s) {
+        e <- min(s + body_size - 1L, length(body))   # end of this window
+        c(cls_id, body[s:e], sep_id)                 # re-add special tokens
+      })
     })
+    rm(all_enc)
 
-    batch_arr <- as.matrix(pooled$cpu())
-    if (is.null(all_chunk_emb)) {
-      all_chunk_emb <- matrix(0, nrow = n_chunks, ncol = ncol(batch_arr))
+    chunk_ids    <- unlist(per_doc, recursive = FALSE)
+    chunk_origin <- rep(seq_along(per_doc), lengths(per_doc))
+    rm(per_doc)
+
+    # Every chunk consists of real tokens only, so its mask is all ones.
+    # Sort chunks by length for the same padding-efficiency reason as the main path.
+    n_chunks     <- length(chunk_ids)
+    chunk_order  <- order(lengths(chunk_ids))
+    chunk_ids    <- chunk_ids[chunk_order]
+    chunk_origin <- chunk_origin[chunk_order]
+
+    chunk_emb <- NULL
+
+    for (start in seq(1L, n_chunks, by = batch_size)) {
+      end   <- min(start + batch_size - 1L, n_chunks)
+      b_ids <- chunk_ids[start:end]
+
+      # Normalisation is applied to the aggregated document vector, not
+      # individual chunks.
+      batch_arr <- .forward_batch(model, b_ids,
+                                  lapply(b_ids, function(v) rep(1L, length(v))),
+                                  pooling, normalize = FALSE, device)
+
+      if (is.null(chunk_emb)) {
+        chunk_emb <- matrix(0, nrow = n_chunks, ncol = ncol(batch_arr))
+      }
+      chunk_emb[start:end, ] <- batch_arr
+
+      n_batch <- n_batch + 1L
+      if (gc_every > 0L && n_batch %% gc_every == 0L) .release_memory(device)
+
+      if (verbose) message(sprintf("  embedded %d / %d chunks", end, n_chunks))
     }
-    all_chunk_emb[start:end, ] <- batch_arr
 
-    if (verbose) message(sprintf("  embedded %d / %d chunks", end, n_chunks))
+    # Aggregate chunk embeddings back into one vector per document: sum the
+    # chunks of each document with rowsum() and divide by the chunk count.
+    # This gives equal weight to each window, which is a reasonable default.
+    block_res <- rowsum(chunk_emb, chunk_origin, reorder = TRUE) /
+                 tabulate(chunk_origin, nbins = b_end - b_start + 1L)
+
+    if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(block_res))
+    result[b_start:b_end, ] <- block_res
+    rm(chunk_ids, chunk_emb, block_res)
   }
-
-  # Aggregate chunk embeddings back into one vector per original document.
-  n           <- length(texts)
-  hidden_size <- ncol(all_chunk_emb)
-  result      <- matrix(0, nrow = n, ncol = hidden_size)
-
-  for (i in seq_len(n)) {
-    # Find all chunk indices that belong to document i.
-    cidx_i <- which(chunk_origin == i)
-
-    if (length(cidx_i) == 1L) {
-      # Single chunk: just copy directly  --  colMeans on one row has overhead.
-      result[i, ] <- all_chunk_emb[cidx_i, ]
-    } else {
-      # Multiple chunks: average their embedding vectors.
-      # This gives equal weight to each window, which is a reasonable default.
-      result[i, ] <- colMeans(all_chunk_emb[cidx_i, , drop = FALSE])
-    }
-  }
+  .release_memory(device)
 
   # L2 normalise the aggregated document vectors.
   # We do this in R rather than torch because result is already an R matrix.
@@ -531,5 +567,6 @@ embed_texts.default <- function(encoder, texts, ...) {
     result         <- result / norms
   }
 
+  dimnames(result) <- NULL
   result   # (n_texts x hidden_size) numeric matrix
 }
