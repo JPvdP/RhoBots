@@ -898,8 +898,14 @@ static List mst_to_hdbscan_result(const vector<Edge>& mst, int n, int min_pts,
   // allow_single_cluster = false (Python default): if the only selected cluster
   // is the root, refuse it and instead activate the root's children.  This
   // prevents diffuse-data condensed trees from collapsing everything into a
-  // single cluster when sub-structure is present.
-  if (!allow_single_cluster && !cl_ch[0].empty()) {
+  // single cluster when sub-structure is present.  If the root never splits
+  // (no child reaches min_pts), there is nothing else to select, so every
+  // point is noise, as in Python hdbscan and dbscan::hdbscan().
+  if (!allow_single_cluster && cl_ch[0].empty())
+    return List::create(Named("labels") = IntegerVector(n, 0),
+                        Named("n_mst_edges") = nm);
+
+  if (!allow_single_cluster) {
     bool only_root = selected[0];
     if (only_root)
       for (int cl = 1; cl < ncl; cl++) if (selected[cl]) { only_root = false; break; }
