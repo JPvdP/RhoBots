@@ -1,16 +1,36 @@
 # Rhobots (development version)
 
+## Bug fixes
+
+* `embed_texts(chunk_strategy = "mean" / "first")` treated padding as real
+  text: short documents were padded to the longest document in the batch,
+  the padding was attended to, and a pad token was used as `[SEP]`.
+  Chunked embeddings change as a result and now match embedding each
+  document on its own.  Re-run any chunked embeddings made with earlier
+  versions.
+* `hdbscan_clustering()` with the default `allow_single_cluster = FALSE`
+  returned all documents as one cluster when the cluster tree never split
+  into groups of at least `min_pts`.  It now returns all documents as
+  noise, as Python `hdbscan` and `dbscan::hdbscan()` do.
+
 ## Memory
 
-* `embed_texts()` no longer lets finished batches pile up in memory on large
-  corpora.  Torch tensors are invisible to R's garbage collector, so dead
-  batch tensors were only freed sporadically; they are now released after
-  every batch (new argument `gc_every`, default 1; also empties the CUDA
-  cache).  On a 3,000-document test this cut peak memory roughly in half
-  with no slowdown.
-* `chunk_strategy = "mean"` / `"first"` now tokenizes and chunks the corpus in
-  blocks of documents instead of all at once, so memory no longer grows with
-  corpus size.  Output is unchanged.
+* `embed_texts()` uses far less memory on large corpora.  On 3,000
+  documents (MiniLM, batch 64 x 256 tokens) peak memory fell from 17.6 GB
+  to 4.4 GB, and to 1.9-2.4 GB with `max_tokens`, without slowing down.
+  Peak memory now depends on the largest batch, not on corpus size.
+  Default output is unchanged.
+  * Finished batches and each encoder layer's attention tensors are freed
+    straight away; torch tensors are invisible to R's garbage collector,
+    so they used to pile up.  New argument `gc_every` (default 1; `0`
+    turns all cleanup off).
+  * New argument `max_tokens` caps padded tokens per batch, so long texts
+    get smaller batches and short texts can use a large `batch_size`.
+  * Batches run longest first, so the first batch reserves the largest
+    memory blocks and later batches reuse them.  An out-of-memory error
+    therefore appears at the start of a run, not the end.
+  * Texts are tokenized and chunked in blocks of documents, and the result
+    matrix is no longer copied during reordering or normalisation.
 
 # Rhobots 0.1.10
 
