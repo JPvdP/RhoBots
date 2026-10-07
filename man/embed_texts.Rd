@@ -31,6 +31,7 @@ embed_texts(encoder, texts, ...)
   chunk_overlap = 0L,
   verbose = interactive(),
   gc_every = 1L,
+  max_tokens = NULL,
   ...
 )
 
@@ -74,6 +75,14 @@ corpora.  Higher values trade a little memory for slightly less overhead.
 Unless \code{gc_every = 0}, memory is also released after every encoder layer,
 so only one layer's attention tensors are alive at a time.  \code{0} disables
 all cleanup.  Ignored for \code{api_embedder}.}
+
+\item{max_tokens}{Upper limit on padded tokens per forward pass (number of
+texts in the batch times the longest one).  Memory per batch grows with
+sequence length, so this caps it: batches of long texts are made smaller,
+while short texts still go up to \code{batch_size} per batch.  \code{NULL}
+(default) means no limit beyond \code{batch_size}.  For example
+\verb{batch_size = 128, max_tokens = 8192} gives 128 short texts per batch but
+only 16 texts of 512 tokens.  Ignored for \code{api_embedder}.}
 }
 \value{
 A numeric matrix with \code{length(texts)} rows and \code{hidden_size} cols.
