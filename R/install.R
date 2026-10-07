@@ -2,63 +2,49 @@
 # install.R  --  One-time setup helper for Rhobots dependencies.
 # =============================================================================
 
-#' Set up Rhobots system dependencies
+#' Check Rhobots system dependencies and print setup instructions
 #'
-#' Installs the torch C++ backend (libtorch + lantern, ~560 MB) if it is not
-#' already available.  On Windows it also reminds the user to install the
-#' Microsoft Visual C++ Redistributable 2022, which torch requires to load its
-#' native libraries.
+#' Checks whether the 'torch' C++ backend is installed and prints the
+#' appropriate setup instructions.  Rhobots requires the 'torch' backend
+#' (libtorch + lantern, ~560 MB) to run transformer models.  Call this
+#' function after installing the package to find out what still needs to be
+#' done.
 #'
-#' Call this function once immediately after installing the package:
-#'
-#' ```r
-#' library(Rhobots)
-#' rhobots_install()
-#' # Restart R when prompted, then load the library again.
-#' ```
-#'
-#' On Windows, install the Visual C++ Redistributable **before** calling this
-#' function if you see a `lantern.dll` error.  The installer is available at:
-#' \url{https://aka.ms/vs/17/release/vc_redist.x64.exe}
-#'
-#' @param reinstall If `TRUE`, reinstall the torch backend even if it already
-#'   appears to be working (default `FALSE`).  Use this when torch loads but
-#'   produces unexpected errors.
-#' @return Invisible `NULL`.
+#' @return Invisible `NULL`, called for its side-effect of printing instructions.
 #' @examples
-#' \dontrun{
-#'   rhobots_install()
-#' }
+#' rhobots_install()
 #' @export
-rhobots_install <- function(reinstall = FALSE) {
-  if (!requireNamespace("torch", quietly = TRUE))
-    stop(
-      "The 'torch' package is not installed.\n",
-      "Run install.packages('torch') and then call rhobots_install() again."
-    )
-
-  if (.Platform$OS.type == "windows") {
+rhobots_install <- function() {
+  if (!requireNamespace("torch", quietly = TRUE)) {
     message(
-      "Windows detected.\n",
-      "torch requires the Microsoft Visual C++ Redistributable 2022.\n",
-      "If torch has not loaded correctly, download and install it from:\n",
-      "  https://aka.ms/vs/17/release/vc_redist.x64.exe\n",
-      "Restart Windows after installation, then re-run rhobots_install().\n"
+      "The 'torch' package is not installed.\n",
+      "Run the following to install it:\n\n",
+      "  install.packages('torch')\n",
+      "  torch::install_torch()\n\n",
+      "Then restart R and load Rhobots again."
     )
-  }
-
-  if (torch::torch_is_installed() && !reinstall) {
-    message("torch backend is already installed and working. Nothing to do.")
     return(invisible(NULL))
   }
 
-  message("Installing torch C++ backend (~560 MB). This may take several minutes...")
-  torch::install_torch(reinstall = reinstall)
-  message(
-    "\nInstallation complete.\n",
-    "IMPORTANT: restart your R session now, then run:\n",
-    "  library(Rhobots)\n",
-    "to verify that everything loads correctly."
-  )
+  if (torch::torch_is_installed()) {
+    message("torch backend is installed and working. Rhobots is ready to use.")
+  } else {
+    message(
+      "The 'torch' package is installed but the C++ backend is missing.\n",
+      "Run the following to install it (~560 MB download):\n\n",
+      "  torch::install_torch()\n\n",
+      "Then restart R and load Rhobots again."
+    )
+  }
+
+  if (.Platform$OS.type == "windows") {
+    message(
+      "\nWindows note: if you see a 'lantern.dll' error after installing the\n",
+      "backend, install the Microsoft Visual C++ Redistributable 2022 from:\n",
+      "  https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist\n",
+      "Then restart Windows and try again."
+    )
+  }
+
   invisible(NULL)
 }

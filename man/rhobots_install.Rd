@@ -2,38 +2,20 @@
 % Please edit documentation in R/install.R
 \name{rhobots_install}
 \alias{rhobots_install}
-\title{Set up Rhobots system dependencies}
+\title{Check Rhobots system dependencies and print setup instructions}
 \usage{
-rhobots_install(reinstall = FALSE)
-}
-\arguments{
-\item{reinstall}{If \code{TRUE}, reinstall the torch backend even if it already
-appears to be working (default \code{FALSE}).  Use this when torch loads but
-produces unexpected errors.}
+rhobots_install()
 }
 \value{
-Invisible \code{NULL}.
+Invisible \code{NULL}, called for its side-effect of printing instructions.
 }
 \description{
-Installs the torch C++ backend (libtorch + lantern, ~560 MB) if it is not
-already available.  On Windows it also reminds the user to install the
-Microsoft Visual C++ Redistributable 2022, which torch requires to load its
-native libraries.
-}
-\details{
-Call this function once immediately after installing the package:
-
-\if{html}{\out{<div class="sourceCode r">}}\preformatted{library(Rhobots)
-rhobots_install()
-# Restart R when prompted, then load the library again.
-}\if{html}{\out{</div>}}
-
-On Windows, install the Visual C++ Redistributable \strong{before} calling this
-function if you see a \code{lantern.dll} error.  The installer is available at:
-\url{https://aka.ms/vs/17/release/vc_redist.x64.exe}
+Checks whether the 'torch' C++ backend is installed and prints the
+appropriate setup instructions.  Rhobots requires the 'torch' backend
+(libtorch + lantern, ~560 MB) to run transformer models.  Call this
+function after installing the package to find out what still needs to be
+done.
 }
 \examples{
-\dontrun{
-  rhobots_install()
-}
+rhobots_install()
 }

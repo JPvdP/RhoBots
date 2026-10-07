@@ -341,6 +341,9 @@ static inline int nd_sz(int node, const vector<SLNode>& sl, int n) {
 // Main exported function
 // =============================================================================
 
+// Forward declaration — defined later in this file after the BallTree section.
+static List mst_to_hdbscan_result(const vector<Edge>&, int, int, bool);
+
 //' HDBSCAN via Boruvka MST on mutual-reachability kNN graph
 //'
 //' Internal function called by \code{cluster_docs.hdbscan_clustering()}.
@@ -356,7 +359,8 @@ static inline int nd_sz(int node, const vector<SLNode>& sl, int n) {
 // [[Rcpp::export]]
 List hdbscan_boruvka_cpp(IntegerMatrix knn_idx,
                           NumericMatrix knn_dist,
-                          int           min_pts)
+                          int           min_pts,
+                          bool          allow_single_cluster = false)
 {
   const int n = knn_idx.nrow();   // number of documents
   const int k = knn_idx.ncol();   // number of nearest neighbours per document
@@ -372,225 +376,9 @@ List hdbscan_boruvka_cpp(IntegerMatrix knn_idx,
 
   // ── Step 2: Borůvka MST on mutual-reachability kNN graph ─────────────────
   vector<Edge> mst = boruvka_mst(knn_idx, knn_dist, core, n, k);
-  const int nm = (int)mst.size();
 
-  // If no edges were added (completely isolated points), return all noise.
-  if (nm == 0)
-    return List::create(Named("labels") = IntegerVector(n, 0),
-                        Named("n_mst_edges") = 0);
-
-  // ── Step 3: Single-linkage tree ───────────────────────────────────────────
-  vector<SLNode> sl = build_sl(mst, n);
-
-  // ── Step 4: Condensed cluster tree ────────────────────────────────────────
-  // nc[node]  = condensed cluster ID assigned to this SL-tree node (-1 = no cluster)
-  // nb[node]  = lambda_birth of the cluster that currently owns this node
-  const int ntot = n + nm;
-  vector<int>    nc(ntot, -1);
-  vector<double> nb(ntot, 0.0);
-
-  // The condensed tree uses its own cluster IDs (separate from SL node IDs).
-  // We grow three parallel arrays as new clusters are created:
-  vector<double>      cl_stab;           // S(C): accumulated stability of each cluster
-  vector<int>         cl_par;            // parent cluster ID in the condensed tree (-1 = root)
-  vector<vector<int>> cl_ch;             // child cluster IDs (non-empty only at true splits)
-
-  // Cluster IDs are assigned in creation order.  Because we process the SL tree
-  // top-down (largest m first), parents always receive lower IDs than children.
-  // This is crucial: it lets us process clusters in ascending ID order during EOM
-  // and be guaranteed that a parent's rep[] is already computed when we reach a child.
-  int next_cl = 0;
-
-  // Lambda that creates a new cluster in the condensed tree and registers it.
-  auto new_cl = [&](int par, double lb) -> int {
-    int id = next_cl++;
-    cl_stab.push_back(0.0);
-    cl_par.push_back(par);
-    cl_ch.push_back(vector<int>());
-    if (par >= 0) cl_ch[par].push_back(id);   // register as child of parent
-    (void)lb;   // lambda_birth stored per-node in nb[], not per-cluster
-    return id;
-  };
-
-  // The root SL node (n+nm-1) represents the entire dataset.
-  // Assign it to a new root cluster born at lambda = 0.
-  nc[n + nm - 1] = new_cl(-1, 0.0);
-  nb[n + nm - 1] = 0.0;
-
-  // Process SL tree nodes from root downwards (high m → low m).
-  // At each merge node nid = n+m:
-  //   lft, rgt — its two children (may be leaves or subtrees)
-  //   ls,  rs  — the sizes (number of leaves) under lft and rgt
-  //   lb_      — is lft large enough to form its own cluster? (ls >= min_pts)
-  //   rb_      — same for rgt
-  for (int m = nm - 1; m >= 0; m--) {
-    const int    nid = n + m;
-    const int    cl  = nc[nid];
-    if (cl < 0) continue;   // this node was never assigned to a cluster (skip)
-
-    const double lam = sl[m].lambda;    // density at which this merge occurs
-    const double lb  = nb[nid];         // density at which the current cluster was born
-    const int    lft = sl[m].left,  ls = nd_sz(lft, sl, n);
-    const int    rgt = sl[m].right, rs = nd_sz(rgt, sl, n);
-    const bool   lb_ = ls >= min_pts;   // left child is large enough
-    const bool   rb_ = rs >= min_pts;   // right child is large enough
-
-    if (lb_ && rb_) {
-      // ── TRUE SPLIT ────────────────────────────────────────────────────────
-      // Both sides are large enough to be independent clusters.
-      // All ls+rs points in the current cluster exit it at lambda=lam
-      // (some will continue into child clusters, but from cl's perspective
-      // they leave at this density level).
-      // Stability contribution: each point has lived in cl from lb to lam.
-      cl_stab[cl] += (double)(ls + rs) * (lam - lb);
-      // Create two new child clusters, both born at lam.
-      int cl_l = new_cl(cl, lam), cl_r = new_cl(cl, lam);
-      nc[lft] = cl_l; nb[lft] = lam;
-      nc[rgt] = cl_r; nb[rgt] = lam;
-
-    } else if (lb_) {
-      // ── RIGHT FALLS OUT AS NOISE ──────────────────────────────────────────
-      // The right child is too small (rs < min_pts) to form a cluster on its
-      // own — it dissolves into noise at this density level.
-      // Stability: the rs points that fall out contributed (lam - lb) each.
-      cl_stab[cl] += (double)rs * (lam - lb);
-      // The left child is large enough → the cluster continues through it.
-      nc[lft] = cl;   nb[lft] = lb;
-      // The right child and its subtree get no cluster (nc stays -1).
-      nc[rgt] = -1;
-
-    } else if (rb_) {
-      // ── LEFT FALLS OUT AS NOISE ───────────────────────────────────────────
-      // Mirror of the previous case.
-      cl_stab[cl] += (double)ls * (lam - lb);
-      nc[lft] = -1;
-      nc[rgt] = cl;   nb[rgt] = lb;
-
-    } else {
-      // ── BOTH SIDES TOO SMALL: CLUSTER DISSOLVES ───────────────────────────
-      // Neither child meets the min_pts threshold.  The cluster cannot survive
-      // this split; all its remaining points exit as noise at lam.
-      cl_stab[cl] += (double)(ls + rs) * (lam - lb);
-      // Mark both children as "no cluster" so the loop skips their subtrees.
-      nc[lft] = -1;
-      nc[rgt] = -1;
-    }
-  }
-
-  const int ncl = next_cl;
-  if (ncl == 0)   // no clusters were ever created (all noise)
-    return List::create(Named("labels") = IntegerVector(n, 0),
-                        Named("n_mst_edges") = nm);
-
-  // ── Step 5: EOM cluster extraction ───────────────────────────────────────
-  //
-  // We now have a condensed tree of candidate clusters, each with a stability.
-  // EOM selects a non-overlapping subset that maximises total stability.
-  //
-  // BOTTOM-UP PASS (process clusters from highest ID to lowest = leaves first):
-  // For a leaf cluster (no children): sel_stab = its own stability.
-  // For an internal cluster: sel_stab = max(its own stability, sum of children's).
-  // "sel_self" records whether THIS cluster preferred its own stability.
-  vector<double> sel_stab(ncl);
-  vector<bool>   sel_self(ncl, false);
-  for (int i = 0; i < ncl; i++) sel_stab[i] = cl_stab[i];
-
-  for (int cl = ncl - 1; cl >= 0; cl--) {
-    if (cl_ch[cl].empty()) {
-      // Leaf cluster: always select itself (no children to compare against).
-      sel_self[cl] = true;
-    } else {
-      double csum = 0.0;
-      for (int ch : cl_ch[cl]) csum += sel_stab[ch];
-      if (cl_stab[cl] >= csum) {
-        // This cluster's own stability beats what its children offer combined.
-        // → Select this cluster (merge children back into parent).
-        sel_self[cl]  = true;
-        sel_stab[cl]  = cl_stab[cl];
-      } else {
-        // Children collectively offer more stability → prefer them.
-        sel_self[cl]  = false;
-        sel_stab[cl]  = csum;    // propagate children's total upward
-      }
-    }
-  }
-
-  // TOP-DOWN PASS (ascending ID = root before children):
-  // Propagate an "active" flag.  A cluster is SELECTED iff:
-  //   (1) it is active (reachable from the root without passing a selected ancestor), AND
-  //   (2) sel_self[cl] is true.
-  // When a cluster is selected, we do NOT activate its children — they are
-  // subsumed by the selected ancestor.
-  vector<bool> active(ncl, false), selected(ncl, false);
-  active[0] = true;   // the root cluster is always active
-
-  for (int cl = 0; cl < ncl; cl++) {
-    if (!active[cl]) continue;
-    if (sel_self[cl]) {
-      selected[cl] = true;
-      // Do NOT activate children; they are covered by this cluster.
-    } else {
-      // This cluster deferred to its children → activate them.
-      for (int ch : cl_ch[cl]) active[ch] = true;
-    }
-  }
-
-  // ── Step 6: Map each cluster to its lowest selected ancestor ──────────────
-  // rep[cl] = the lowest (most specific) selected cluster in cl's ancestry.
-  // We process clusters in ascending ID order, so rep[parent] is guaranteed to
-  // be set before we process any child.
-  vector<int> rep(ncl, -1);
-  for (int cl = 0; cl < ncl; cl++) {
-    if (selected[cl]) {
-      rep[cl] = cl;                                       // self-selected
-    } else {
-      int par = cl_par[cl];
-      rep[cl] = (par >= 0) ? rep[par] : -1;              // inherit from parent
-    }
-  }
-
-  // ── Step 7: Assign 1-indexed integer labels to selected clusters ──────────
-  // Labels: 0 = noise, 1, 2, ... = cluster IDs (matching dbscan convention).
-  vector<int> lmap(ncl, 0);
-  int next_lbl = 1;
-  for (int cl = 0; cl < ncl; cl++) if (selected[cl]) lmap[cl] = next_lbl++;
-
-  // ── Step 8: Build SL-tree parent pointers ────────────────────────────────
-  // We need to walk UPWARD from any point to find the first SL node whose
-  // condensed cluster is selected.  To walk upward we need parent pointers.
-  //
-  // Why is a parent-walk necessary?
-  //   During the condensed-tree pass (Step 4), leaf points on the SMALL SIDE
-  //   of a split get nc[leaf] = -1 (no cluster).  But their PARENT SL node
-  //   (the internal merge node that joined them) still has a valid nc[].
-  //   Walking up one level resolves this correctly.
-  //
-  // Points that walk all the way to -1 (no selected ancestor) are noise.
-  vector<int> sl_par(n + nm, -1);
-  for (int m = 0; m < nm; m++) {
-    int nid = n + m;
-    sl_par[sl[m].left]  = nid;
-    sl_par[sl[m].right] = nid;
-  }
-
-  // ── Step 9: Label each point ──────────────────────────────────────────────
-  IntegerVector labels(n, 0);   // default: noise
-  for (int i = 0; i < n; i++) {
-    int node = i;
-    // Walk up the SL tree until we find a node with a valid condensed cluster.
-    while (node != -1) {
-      int cl = nc[node];
-      if (cl >= 0) {
-        // Found a node whose cluster is assigned.  Look up its selected representative.
-        int r = rep[cl];
-        if (r >= 0) labels[i] = lmap[r];   // r = -1 means not in any selected cluster → noise
-        break;
-      }
-      node = sl_par[node];   // no cluster here → go up to the parent merge node
-    }
-  }
-
-  return List::create(Named("labels") = labels, Named("n_mst_edges") = nm);
+  // ── Steps 3–9: single-linkage tree → condensed tree → EOM ────────────────
+  return mst_to_hdbscan_result(mst, n, min_pts, allow_single_cluster);
 }
 
 // =============================================================================
@@ -1008,7 +796,15 @@ static vector<Edge> boruvka_mst_kd(
 }
 
 // ── Shared postprocessing: MST → single-linkage → condensed tree → EOM ───────
-static List mst_to_hdbscan_result(const vector<Edge>& mst, int n, int min_pts)
+//
+// allow_single_cluster: when false (default, matching Python hdbscan), the root
+//   cluster is never returned as the only selected cluster.  If EOM would select
+//   only the root, we instead activate the root's immediate children and re-run
+//   the top-down selection pass from there.  This mirrors Python's default
+//   allow_single_cluster=False behaviour and prevents trivially collapsing all
+//   points into one cluster for diffuse (sentiment/continuous) embedding spaces.
+static List mst_to_hdbscan_result(const vector<Edge>& mst, int n, int min_pts,
+                                   bool allow_single_cluster = false)
 {
   const int nm = (int)mst.size();
   if (nm == 0)
@@ -1084,11 +880,36 @@ static List mst_to_hdbscan_result(const vector<Edge>& mst, int n, int min_pts)
   }
 
   vector<bool> active(ncl, false), selected(ncl, false);
-  active[0] = true;
-  for (int cl = 0; cl < ncl; cl++) {
-    if (!active[cl]) continue;
-    if (sel_self[cl]) selected[cl] = true;
-    else for (int ch : cl_ch[cl]) active[ch] = true;
+
+  // Top-down activation pass.  Declared as a local lambda so we can re-run it
+  // after the allow_single_cluster adjustment without duplicating the loop.
+  auto run_topdown = [&]() {
+    fill(active.begin(),   active.end(),   false);
+    fill(selected.begin(), selected.end(), false);
+    active[0] = true;
+    for (int cl = 0; cl < ncl; cl++) {
+      if (!active[cl]) continue;
+      if (sel_self[cl]) selected[cl] = true;
+      else for (int ch : cl_ch[cl]) active[ch] = true;
+    }
+  };
+  run_topdown();
+
+  // allow_single_cluster = false (Python default): if the only selected cluster
+  // is the root, refuse it and instead activate the root's children.  This
+  // prevents diffuse-data condensed trees from collapsing everything into a
+  // single cluster when sub-structure is present.
+  if (!allow_single_cluster && !cl_ch[0].empty()) {
+    bool only_root = selected[0];
+    if (only_root)
+      for (int cl = 1; cl < ncl; cl++) if (selected[cl]) { only_root = false; break; }
+
+    if (only_root) {
+      // Deselect root; start the top-down pass from root's children instead.
+      // sel_self[0] is effectively overridden: root is never the selected cluster.
+      sel_self[0] = false;
+      run_topdown();
+    }
   }
 
   vector<int> rep(ncl, -1);
@@ -1135,7 +956,7 @@ static List mst_to_hdbscan_result(const vector<Edge>& mst, int n, int min_pts)
 //'   \code{n_mst_edges} (int, always n-1 when data is connected).
 //' @keywords internal
 // [[Rcpp::export]]
-List hdbscan_kdtree_cpp(NumericMatrix X, int min_pts)
+List hdbscan_kdtree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluster = false)
 {
   const int n = X.nrow();
   const int d = X.ncol();
@@ -1170,7 +991,7 @@ List hdbscan_kdtree_cpp(NumericMatrix X, int min_pts)
   vector<Edge> mst = boruvka_mst_kd(tree, adaptor, core, n, d, min_pts);
 
   // ── Steps 4–9: MST → labels ──────────────────────────────────────────────
-  return mst_to_hdbscan_result(mst, n, min_pts);
+  return mst_to_hdbscan_result(mst, n, min_pts, allow_single_cluster);
 }
 
 // =============================================================================
@@ -1577,7 +1398,7 @@ static vector<Edge> boruvka_mst_bt(
 //'
 //' Default internal HDBSCAN implementation (called when \code{knn = "balltree"}).
 //' Builds a Ball-tree from the data matrix and runs dual-tree Borůvka.  Ball
-//' bounding spheres prune more effectively than axis-aligned boxes in ≥3-D,
+//' bounding spheres prune more effectively than axis-aligned boxes in >=3-D,
 //' keeping Borůvka rounds close to O(n log n) even on data without strong
 //' cluster separation.  kNN results from the core-distance pass are reused as
 //' a Borůvka warm-up, so no extra tree traversal is needed.
@@ -1588,7 +1409,7 @@ static vector<Edge> boruvka_mst_bt(
 //'   \code{n_mst_edges} (int, always n-1 when data is connected).
 //' @keywords internal
 // [[Rcpp::export]]
-List hdbscan_balltree_cpp(NumericMatrix X, int min_pts)
+List hdbscan_balltree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluster = false)
 {
   const int n = X.nrow(), d = X.ncol();
   const double* raw = REAL(X);
@@ -1622,6 +1443,6 @@ List hdbscan_balltree_cpp(NumericMatrix X, int min_pts)
   vector<Edge> mst = boruvka_mst_bt(ann, core, warm_idx, warm_dsq, n, d, kc);
 
   // ── Steps 5–10: MST → labels ─────────────────────────────────────────────
-  return mst_to_hdbscan_result(mst, n, min_pts);
+  return mst_to_hdbscan_result(mst, n, min_pts, allow_single_cluster);
 }
 

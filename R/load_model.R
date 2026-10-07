@@ -125,7 +125,9 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
   } else {
     weights_path <- NULL
     download_errors <- list()
-    for (filename in c("model.safetensors", "pytorch_model.bin")) {
+    safetensors_names <- c("model.safetensors", "pytorch_model.safetensors")
+    all_names         <- c(safetensors_names, "pytorch_model.bin")
+    for (filename in all_names) {
       weights_path <- tryCatch(
         hfhub::hub_download(repo_id, filename),
         error = function(e) { download_errors[[filename]] <<- conditionMessage(e); NULL }
@@ -140,7 +142,7 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
         paste0("\n  ", names(download_errors), ": ", unlist(download_errors), collapse = "")
       else ""
       stop("Could not download model weights from ", repo_id,
-           ". Tried model.safetensors and pytorch_model.bin.", detail)
+           ". Tried ", paste(all_names, collapse = ", "), ".", detail)
     }
   }
 
@@ -228,8 +230,8 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
 #'   emb <- embed_texts(enc, c("Graph neural networks for drug discovery.",
 #'                              "Climate tipping points and carbon budgets."))
 #' }
-load_specter2 <- function(adapter      = "allenai/specter2",
-                           base         = "allenai/specter2_base",
+load_specter2 <- function(adapter      = "NetworkIsLife/specter2",
+                           base         = "NetworkIsLife/specter2_base",
                            adapter_name = "[PRX]") {
   # ---- [1] Load base model --------------------------------------------------
   message("Loading SPECTER2 base model from: ", base)
@@ -252,14 +254,27 @@ load_specter2 <- function(adapter      = "allenai/specter2",
                   adapter_name, hidden_size, bottleneck_dim, hidden_size))
 
   # ---- [3] Download adapter weights -----------------------------------------
-  message("Downloading adapter weights (pytorch_adapter.bin)...")
-  adp_path <- tryCatch(
-    hfhub::hub_download(adapter, "pytorch_adapter.bin"),
-    error = function(e) stop("Could not download pytorch_adapter.bin from '",
-                              adapter, "': ", conditionMessage(e))
-  )
+  # Try safetensors first (NetworkIsLife forks), fall back to original .bin name.
+  adp_path <- NULL
+  for (adp_filename in c("model.safetensors", "pytorch_adapter.bin")) {
+    adp_path <- tryCatch(
+      hfhub::hub_download(adapter, adp_filename),
+      error = function(e) NULL
+    )
+    if (!is.null(adp_path)) {
+      message("Downloading adapter weights (", adp_filename, ")...")
+      break
+    }
+  }
+  if (is.null(adp_path))
+    stop("Could not download adapter weights from '", adapter,
+         "'. Tried model.safetensors and pytorch_adapter.bin.")
   adp_weights <- .load_weight_file(adp_path)
   message("  Loaded ", length(adp_weights), " tensors from adapter checkpoint.")
+
+  # Strip the leading "bert." prefix that the SPECTER2 adapter checkpoint uses
+  # (keys look like "bert.encoder.layer.X..." but we index without the prefix).
+  names(adp_weights) <- sub("^bert\\.", "", names(adp_weights))
 
   # Peek at available keys to validate the adapter_name
   all_keys <- names(adp_weights)
@@ -268,6 +283,13 @@ load_specter2 <- function(adapter      = "allenai/specter2",
 
   # ---- [4] Inject adapters into each transformer layer ----------------------
   message("Injecting adapter into ", n_layers, " transformer layers...")
+
+  # Pre-fetch direct references to each layer so that assignment goes through
+  # $<- on the module object itself rather than triggering R's nested
+  # replacement chain (x[[i]]$y <- v desugars to [[<- + $<- which can
+  # reinitialise the module when written back to the parent nn_module_list).
+  layer_refs <- lapply(seq_len(n_layers), function(i) enc$model$encoder$layer[[i]])
+
   for (i in seq_len(n_layers)) {
     layer_idx <- i - 1L   # 0-based key index matching Python convention
     prefix    <- sprintf("encoder.layer.%d.output.adapters.%s.",
@@ -302,8 +324,8 @@ load_specter2 <- function(adapter      = "allenai/specter2",
       "adapter_up.bias"       = adp_weights[[up_b_key]]
     ))
 
-    # Attach to the layer  --  R torch registers this as a submodule
-    enc$model$encoder$layer[[i]]$adapter <- adp
+    # Attach via the pre-fetched reference (avoids nested [[<- write-back)
+    layer_refs[[i]]$adapter <- adp
   }
 
   enc$model$eval()

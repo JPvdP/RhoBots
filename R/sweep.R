@@ -78,6 +78,14 @@
 #' @param quality_top_n Passed to \code{\link{topic_quality}} as \code{top_n}.
 #' @param quality_sample Passed to \code{\link{topic_quality}} as
 #'   \code{sample_size} for the silhouette computation. Default 500.
+#' @param quality_space Embedding space for quality metrics; passed to
+#'   \code{\link{topic_quality}} as \code{space}.  Defaults to
+#'   \code{"reduced"}, which measures cohesion, separation, and silhouette in
+#'   the UMAP-reduced space — the space where different \code{n_components} and
+#'   \code{n_neighbors} choices produce different cluster structures.  Set to
+#'   \code{"original"} to match standalone \code{topic_quality()} behaviour
+#'   (full encoder embedding), but be aware that original-space metrics barely
+#'   vary across sweep runs for well-separated corpora.
 #' @param seed Random seed for reproducibility.
 #' @param verbose Print one-line progress per combination.
 #' @return A list of class \code{topic_sweep} with elements:
@@ -118,6 +126,7 @@ sweep_topics <- function(docs,
                           sample_size     = NULL,
                           quality_top_n   = 10L,
                           quality_sample  = 500L,
+                          quality_space   = "reduced",
                           seed            = 42L,
                           verbose         = TRUE) {
 
@@ -192,7 +201,8 @@ sweep_topics <- function(docs,
       )
       q_i <- topic_quality(fit_i,
                             top_n       = quality_top_n,
-                            sample_size = quality_sample)
+                            sample_size = quality_sample,
+                            space       = quality_space)
       if (verbose)
         message(sprintf("    -> %d topics  sil=%.3f  noise=%.0f%%",
                         as.integer(q_i$n_topics),
@@ -452,11 +462,18 @@ visualize_sweep <- function(sweep,
             "(raw values still shown in cell text).")
 
   # --- Cell text (raw values displayed inside each cell) ----------------------
-  fmt_val <- function(vals, m)
-    ifelse(is.na(vals), "err",
-           ifelse(m == "n_topics",
-                  as.character(as.integer(vals)),
-                  sprintf("%.3f", vals)))
+  # Use adaptive precision: enough decimal places to show at least 2 significant
+  # figures of the range within each column.  This prevents all cells in a column
+  # displaying the same string when values differ only at the 4th+ decimal place.
+  fmt_val <- function(vals, m) {
+    if (m == "n_topics")
+      return(ifelse(is.na(vals), "NA", as.character(as.integer(vals))))
+    rng <- diff(range(vals, na.rm = TRUE))
+    dp  <- if (!is.finite(rng) || rng == 0) 3L
+           else max(3L, ceiling(-log10(rng)) + 1L)
+    dp  <- min(dp, 5L)
+    ifelse(is.na(vals), "NA", sprintf(paste0("%.", dp, "f"), vals))
+  }
 
   cell_mat <- matrix("", nrow = n_runs, ncol = length(metrics))
   for (j in seq_along(metrics))
@@ -495,6 +512,16 @@ visualize_sweep <- function(sweep,
   # Replace any remaining NAs with the neutral midpoint before passing to plotly.
   norm_mat[is.na(norm_mat)] <- 0.5
 
+  # plotly R serialises numeric matrices (z) row-major, but serialises character
+  # matrices column-major — so passing `text = cell_mat` causes plotly.js to
+  # index text[metric_j][run_i] instead of text[run_i][metric_j], making every
+  # cell in a column show the same value.  Explicit list-of-row-lists forces the
+  # correct row-major 2D structure for both text and hovertext.
+  cell_list  <- lapply(seq_len(nrow(cell_mat)),
+                       function(i) as.list(cell_mat[i, ]))
+  hover_list <- lapply(seq_len(nrow(hover_mat)),
+                       function(i) as.list(hover_mat[i, ]))
+
   p <- plotly::plot_ly(
     width         = width,
     height        = height,
@@ -506,8 +533,8 @@ visualize_sweep <- function(sweep,
     zmin          = 0,
     zmax          = 1,
     zauto         = FALSE,
-    text          = cell_mat,
-    hovertext     = hover_mat,
+    text          = cell_list,
+    hovertext     = hover_list,
     hovertemplate = "%{hovertext}<extra></extra>",
     texttemplate  = "%{text}",
     textfont      = list(size = 9L, color = "#333333"),

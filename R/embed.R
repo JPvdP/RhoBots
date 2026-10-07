@@ -479,7 +479,9 @@ embed_texts.default <- function(encoder, texts, ...) {
     # chunk token-ID vectors for one document; chunk_origin[i] records which
     # (block-local) document chunk i came from so we can reassemble later.
     per_doc <- lapply(all_enc, function(e) {
-      ids    <- e$ids
+      # encode_batch() pads every document to the longest one in the block;
+      # keep only the real tokens so [SEP] and the token count are correct.
+      ids    <- e$ids[e$attention_mask == 1L]
       n_toks <- length(ids)
 
       # Document fits in one chunk  --  use as-is.

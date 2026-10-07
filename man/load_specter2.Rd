@@ -5,8 +5,8 @@
 \title{Load a SPECTER2 model with a task-specific adapter}
 \usage{
 load_specter2(
-  adapter = "allenai/specter2",
-  base = "allenai/specter2_base",
+  adapter = "NetworkIsLife/specter2",
+  base = "NetworkIsLife/specter2_base",
   adapter_name = "[PRX]"
 )
 }

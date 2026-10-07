@@ -27,7 +27,7 @@ NULL
       msg <- paste0(
         msg, "\n",
         "Windows: first install the Visual C++ Redistributable 2022  -- \n",
-        "  https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        "  https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist"
       )
     }
     packageStartupMessage(msg)

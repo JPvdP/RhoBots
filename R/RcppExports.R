@@ -13,8 +13,8 @@
 #' @param min_pts Integer minimum cluster size / core-distance order.
 #' @return Named list: \code{labels} (IntegerVector), \code{n_mst_edges} (int).
 #' @keywords internal
-hdbscan_boruvka_cpp <- function(knn_idx, knn_dist, min_pts) {
-    .Call(`_Rhobots_hdbscan_boruvka_cpp`, knn_idx, knn_dist, min_pts)
+hdbscan_boruvka_cpp <- function(knn_idx, knn_dist, min_pts, allow_single_cluster = FALSE) {
+    .Call(`_Rhobots_hdbscan_boruvka_cpp`, knn_idx, knn_dist, min_pts, allow_single_cluster)
 }
 
 #' HDBSCAN via Boruvka MST with KD-tree queries (no fixed k)
@@ -32,15 +32,15 @@ hdbscan_boruvka_cpp <- function(knn_idx, knn_dist, min_pts) {
 #' @return Named list: \code{labels} (IntegerVector, 0 = noise),
 #'   \code{n_mst_edges} (int, always n-1 when data is connected).
 #' @keywords internal
-hdbscan_kdtree_cpp <- function(X, min_pts) {
-    .Call(`_Rhobots_hdbscan_kdtree_cpp`, X, min_pts)
+hdbscan_kdtree_cpp <- function(X, min_pts, allow_single_cluster = FALSE) {
+    .Call(`_Rhobots_hdbscan_kdtree_cpp`, X, min_pts, allow_single_cluster)
 }
 
 #' HDBSCAN via Ball-tree dual-tree Borůvka MST
 #'
 #' Default internal HDBSCAN implementation (called when \code{knn = "balltree"}).
 #' Builds a Ball-tree from the data matrix and runs dual-tree Borůvka.  Ball
-#' bounding spheres prune more effectively than axis-aligned boxes in ≥3-D,
+#' bounding spheres prune more effectively than axis-aligned boxes in >=3-D,
 #' keeping Borůvka rounds close to O(n log n) even on data without strong
 #' cluster separation.  kNN results from the core-distance pass are reused as
 #' a Borůvka warm-up, so no extra tree traversal is needed.
@@ -50,7 +50,7 @@ hdbscan_kdtree_cpp <- function(X, min_pts) {
 #' @return Named list: \code{labels} (IntegerVector, 0 = noise),
 #'   \code{n_mst_edges} (int, always n-1 when data is connected).
 #' @keywords internal
-hdbscan_balltree_cpp <- function(X, min_pts) {
-    .Call(`_Rhobots_hdbscan_balltree_cpp`, X, min_pts)
+hdbscan_balltree_cpp <- function(X, min_pts, allow_single_cluster = FALSE) {
+    .Call(`_Rhobots_hdbscan_balltree_cpp`, X, min_pts, allow_single_cluster)
 }
 

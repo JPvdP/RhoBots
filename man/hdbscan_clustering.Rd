@@ -7,7 +7,8 @@
 hdbscan_clustering(
   min_pts = 10L,
   method = c("eom", "leaf"),
-  knn = c("balltree", "kdtree", "adaptive", "fixed")
+  knn = c("balltree", "kdtree", "adaptive", "fixed"),
+  allow_single_cluster = FALSE
 )
 }
 \arguments{
@@ -20,13 +21,13 @@ The leaf method uses \code{dbscan::hdbscan()} on small corpora only.}
 \describe{
 \item{\code{"balltree"}}{(default) Ball-tree dual-tree Borůvka.  Builds a
 Ball-tree from the data: bounding hyperspheres prune more effectively than
-axis-aligned boxes in ≥3-D, keeping Borůvka rounds O(n log n) even on
+axis-aligned boxes in >=3-D, keeping Borůvka rounds O(n log n) even on
 data without strong cluster separation.  kNN results from the
 core-distance pass are reused as a warm-up so no extra tree traversal is
 needed.  Fastest for real corpus data; recommended default.}
 \item{\code{"kdtree"}}{KD-tree dual-tree Borůvka (nanoflann).  Same
 algorithm as \code{"balltree"} but with axis-aligned bounding boxes.
-Faster to build; pruning degrades in higher dimensions (≥4-D).  Use when
+Faster to build; pruning degrades in higher dimensions (>=4-D).  Use when
 comparing against the \code{"balltree"} or for debugging.}
 \item{\code{"adaptive"}}{No-tree fallback: builds a kNN graph with
 \code{dbscan::kNN()} starting at \code{k = max(min_pts, 15)} and doubles
@@ -35,6 +36,14 @@ the tree-based methods miss an isolated island cluster.}
 \item{\code{"fixed"}}{Like \code{"adaptive"} but caps \code{k} at 200.
 Fastest; occasionally misses island clusters beyond the cap.}
 }}
+
+\item{allow_single_cluster}{Logical (default \code{FALSE}, matching Python
+\code{hdbscan}'s default).  When \code{FALSE}, a single cluster that
+covers all points is never returned: if the EOM excess-of-mass algorithm
+would select the root cluster, the root's immediate children are activated
+instead, guaranteeing at least two clusters when sub-structure is present.
+Set to \code{TRUE} to allow a single-cluster result (appropriate for data
+that is genuinely unimodal).}
 }
 \value{
 An \code{hdbscan_clustering} model object.

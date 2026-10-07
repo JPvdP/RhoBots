@@ -4,7 +4,7 @@
 \alias{hdbscan_kdtree_cpp}
 \title{HDBSCAN via Boruvka MST with KD-tree queries (no fixed k)}
 \usage{
-hdbscan_kdtree_cpp(X, min_pts)
+hdbscan_kdtree_cpp(X, min_pts, allow_single_cluster = FALSE)
 }
 \arguments{
 \item{X}{Numeric matrix (n x d) of point coordinates (e.g. 5-D UMAP embedding).}
