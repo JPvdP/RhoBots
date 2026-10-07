@@ -70,8 +70,10 @@ when \code{chunk_strategy != "truncate"}. Default 0.}
 \item{gc_every}{Release memory held by finished batches every \code{gc_every}
 batches (default 1).  Torch tensors live outside R's heap, so R does not
 see how much memory they use and may not free them in time on large
-corpora.  Higher values trade a little memory for slightly less overhead; \code{0}
-disables the periodic cleanup.  Ignored for \code{api_embedder}.}
+corpora.  Higher values trade a little memory for slightly less overhead.
+Unless \code{gc_every = 0}, memory is also released after every encoder layer,
+so only one layer's attention tensors are alive at a time.  \code{0} disables
+all cleanup.  Ignored for \code{api_embedder}.}
 }
 \value{
 A numeric matrix with \code{length(texts)} rows and \code{hidden_size} cols.

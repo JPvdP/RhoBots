@@ -202,8 +202,10 @@ cls_pool <- function(hidden) {
 #' @param gc_every Release memory held by finished batches every `gc_every`
 #'   batches (default 1).  Torch tensors live outside R's heap, so R does not
 #'   see how much memory they use and may not free them in time on large
-#'   corpora.  Higher values trade a little memory for slightly less overhead; `0`
-#'   disables the periodic cleanup.  Ignored for `api_embedder`.
+#'   corpora.  Higher values trade a little memory for slightly less overhead.
+#'   Unless `gc_every = 0`, memory is also released after every encoder layer,
+#'   so only one layer's attention tensors are alive at a time.  `0` disables
+#'   all cleanup.  Ignored for `api_embedder`.
 #' @param ... Not used; retained for S3 method compatibility.
 #' @return A numeric matrix with `length(texts)` rows and `hidden_size` cols.
 #' @export
@@ -342,7 +344,8 @@ embed_texts.bert_encoder <- function(encoder, texts,
     batch_arr <- .forward_batch(model,
                                 lapply(enc, function(e) e$ids),
                                 lapply(enc, function(e) e$attention_mask),
-                                pooling, normalize, device)
+                                pooling, normalize, device,
+                                layer_gc = gc_every > 0L)
     rm(enc)
 
     # Allocate result matrix on first batch now that hidden_size is known.
@@ -368,7 +371,12 @@ embed_texts.bert_encoder <- function(encoder, texts,
 # as soon as it returns, so the next .release_memory() call can free them.
 # -----------------------------------------------------------------------------
 
-.forward_batch <- function(model, ids, masks, pooling, normalize, device) {
+.forward_batch <- function(model, ids, masks, pooling, normalize, device,
+                           layer_gc = TRUE) {
+  # Free each encoder layer's intermediates before the next one runs.
+  old <- options(rhobots.layer_gc = layer_gc)
+  on.exit(options(old), add = TRUE)
+
   Lmax  <- max(vapply(ids, length, integer(1L)))
   pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
   ids_m <- do.call(rbind, lapply(ids,   pad))
@@ -536,7 +544,8 @@ embed_texts.default <- function(encoder, texts, ...) {
       # individual chunks.
       batch_arr <- .forward_batch(model, b_ids,
                                   lapply(b_ids, function(v) rep(1L, length(v))),
-                                  pooling, normalize = FALSE, device)
+                                  pooling, normalize = FALSE, device,
+                                  layer_gc = gc_every > 0L)
 
       if (is.null(chunk_emb)) {
         chunk_emb <- matrix(0, nrow = n_chunks, ncol = ncol(batch_arr))

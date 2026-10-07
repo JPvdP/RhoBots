@@ -495,10 +495,28 @@ bert_encoder <- torch::nn_module(
     # Pass hidden states through each transformer layer in turn.
     for (i in seq_along(self$layer)) {
       x <- self$layer[[i]](x, mask)
+      .layer_gc()
     }
     x   # (batch_size, seq_len, hidden_size)
   }
 )
+
+
+# -----------------------------------------------------------------------------
+# .layer_gc  --  free a finished layer's intermediate tensors
+#
+# Each layer creates several (B, num_heads, L, L) attention tensors.  R does
+# not see their size, so without help all layers' intermediates stay alive
+# until the whole forward pass ends.  embed_texts() switches this on via the
+# `rhobots.layer_gc` option so only one layer's worth is alive at a time.
+# A minor collection (full = FALSE) is enough because the intermediates were
+# just created, and it costs ~2 ms instead of ~80 ms for a full one.
+# -----------------------------------------------------------------------------
+
+.layer_gc <- function() {
+  if (isTRUE(getOption("rhobots.layer_gc"))) gc(verbose = FALSE, full = FALSE)
+  invisible(NULL)
+}
 
 
 # -----------------------------------------------------------------------------
@@ -890,6 +908,7 @@ mpnet_encoder <- torch::nn_module(
 
     for (i in seq_along(self$layer)) {
       x <- self$layer[[i]](x, mask, bias)
+      .layer_gc()
     }
     x   # (batch_size, seq_len, hidden_size)
   },
