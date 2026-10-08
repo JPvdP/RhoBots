@@ -83,17 +83,46 @@ library(tidyr)
 # ── Helper: save a plotly figure as a self-contained HTML file ────────────────
 # We use saveWidget() from htmlwidgets.  selfcontained = TRUE embeds all
 # JavaScript inside the .html file so it opens without an internet connection.
-save_html <- function(p, path) {
+#save_html <- function(p, path, height = 600) {
+#  if (is.null(p)) return(invisible(NULL))
+#  dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
+#  # Stamp a fixed height so the widget renders inside an iframe without
+#  # racing to measure a not-yet-sized container. Width stays responsive.
+##  if (inherits(p, "plotly")) p <- plotly::layout(p, height = height)
+#  htmlwidgets::saveWidget(p,
+#                          file    = normalizePath(path, mustWork = FALSE),
+#                          selfcontained = FALSE,
+#                          libdir  = "libs")
+#  message("  saved: ", basename(path))
+#  invisible(p)
+#}
+
+save_html <- function(p, path, png = TRUE, width = 1000, height = 600) {
   if (is.null(p)) return(invisible(NULL))
   dir.create(dirname(path), showWarnings = FALSE, recursive = TRUE)
-  # selfcontained = FALSE avoids the pandoc/plotly_build() path that calls
-  # scales::col_numeric() on the z-matrix and crashes when all values are
-  # identical (domain = [Inf, -Inf]).  Dependencies land in output/libs/.
-  htmlwidgets::saveWidget(p,
-                          file    = normalizePath(path, mustWork = FALSE),
-                          selfcontained = FALSE,
-                          libdir  = "libs")   # → output/libs/ alongside the HTMLs
+
+  htmlwidgets::saveWidget(
+    p,
+    file          = normalizePath(path, mustWork = FALSE),
+    selfcontained = FALSE,
+    libdir        = "libs"
+  )
   message("  saved: ", basename(path))
+
+  if (isTRUE(png)) {
+    png_path <- sub("\\.html?$", ".png", path)
+    if (requireNamespace("webshot2", quietly = TRUE)) {
+      webshot2::webshot(
+        url    = normalizePath(path, mustWork = FALSE),
+        file   = normalizePath(png_path, mustWork = FALSE),
+        vwidth = width, vheight = height,
+        delay  = 1                       # let Plotly finish drawing first
+      )
+      message("  saved: ", basename(png_path))
+    } else {
+      message("  (PNG skipped — run install.packages('webshot2'))")
+    }
+  }
   invisible(p)
 }
 

@@ -4,7 +4,7 @@
 \alias{hdbscan_boruvka_cpp}
 \title{HDBSCAN via Boruvka MST on mutual-reachability kNN graph}
 \usage{
-hdbscan_boruvka_cpp(knn_idx, knn_dist, min_pts)
+hdbscan_boruvka_cpp(knn_idx, knn_dist, min_pts, allow_single_cluster = FALSE)
 }
 \arguments{
 \item{knn_idx}{Integer matrix (n x k), 1-indexed nearest-neighbour indices.}

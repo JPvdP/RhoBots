@@ -199,6 +199,20 @@ cls_pool <- function(hidden) {
 #' @param chunk_overlap Number of token overlap between consecutive windows
 #'   when `chunk_strategy != "truncate"`. Default 0.
 #' @param verbose If `TRUE`, prints batch progress.
+#' @param gc_every Release memory held by finished batches every `gc_every`
+#'   batches (default 1).  Torch tensors live outside R's heap, so R does not
+#'   see how much memory they use and may not free them in time on large
+#'   corpora.  Higher values trade a little memory for slightly less overhead.
+#'   Unless `gc_every = 0`, memory is also released after every encoder layer,
+#'   so only one layer's attention tensors are alive at a time.  `0` disables
+#'   all cleanup.  Ignored for `api_embedder`.
+#' @param max_tokens Upper limit on padded tokens per forward pass (number of
+#'   texts in the batch times the longest one).  Memory per batch grows with
+#'   sequence length, so this caps it: batches of long texts are made smaller,
+#'   while short texts still go up to `batch_size` per batch.  `NULL`
+#'   (default) means no limit beyond `batch_size`.  For example
+#'   `batch_size = 128, max_tokens = 8192` gives 128 short texts per batch but
+#'   only 16 texts of 512 tokens.  Ignored for `api_embedder`.
 #' @param ... Not used; retained for S3 method compatibility.
 #' @return A numeric matrix with `length(texts)` rows and `hidden_size` cols.
 #' @export
@@ -241,34 +255,44 @@ embed_texts <- function(encoder, texts, ...) UseMethod("embed_texts")
 #  2. Set up tokenizer   --  enable padding (so all texts in a batch get the
 #     same length) and truncation (so no text exceeds max_length tokens).
 #
-#  3. Batch loop   --  process texts in chunks of batch_size to control memory.
-#     Within each batch:
-#
-#     a. Tokenize   --  the tok package returns a list of Encoding objects, each
-#        carrying:
+#  3. Tokenize in blocks   --  the tok package returns a list of Encoding
+#     objects, each carrying:
 #          $ids           : integer vector of token IDs
 #          $attention_mask: 1 for real tokens, 0 for padding
+#     We keep only the real tokens.  Working per block of documents means
+#     token lengths are known before batching, without tokenizing the whole
+#     corpus at once.
 #
-#     b. Build matrices   --  pad every sequence to Lmax (the longest in this
+#  4. Batch loop (.embed_sequences)   --  sort by token length, longest first,
+#     and cut batches of at most batch_size texts and max_tokens padded
+#     tokens.  Within each batch:
+#
+#     a. Build matrices   --  pad every sequence to Lmax (the longest in this
 #        batch) by appending 0s.  Stack rows into an integer matrix.
 #
-#     c. Convert to tensors   --  wrap the R matrices as torch_long() tensors
+#     b. Convert to tensors   --  wrap the R matrices as torch_long() tensors
 #        and move them to the chosen device (CPU or GPU).
 #
-#     d. Forward pass   --  run through the model architecture defined in
+#     c. Forward pass   --  run through the model architecture defined in
 #        architecture.R.  Output shape: (batch_size, Lmax, hidden_size).
 #
-#     e. Pool   --  collapse the sequence dimension:
+#     d. Pool   --  collapse the sequence dimension:
 #          mean pool : weighted average over non-padding tokens
 #          CLS pool  : extract the first token's hidden state
 #
-#     f. L2 normalise   --  scale each row vector to unit length.  After
+#     e. L2 normalise   --  scale each row vector to unit length.  After
 #        normalisation, cosine_similarity(a, b) = dot(a, b), making
 #        similarity comparisons very cheap (just matrix multiplication).
 #
-#     g. Back to R   --  convert the GPU tensor to a standard R numeric array.
+#     f. Back to R   --  convert the GPU tensor to a standard R numeric array.
 #
-#  4. Stack rows   --  do.call(rbind, ...) assembles all batches into one matrix.
+#  5. Free memory   --  torch tensors live outside R's heap, so R's garbage
+#     collector cannot see how large they are and rarely runs on its own.
+#     Every `gc_every` batches we force a collection (and empty the CUDA
+#     cache) so finished batches are actually released.
+#
+#  6. Keep input order   --  each batch's rows are written straight to their
+#     original positions in a pre-allocated matrix.
 # -----------------------------------------------------------------------------
 
 #' @rdname embed_texts
@@ -282,8 +306,16 @@ embed_texts.bert_encoder <- function(encoder, texts,
                                       chunk_strategy = c("truncate", "mean", "first"),
                                       chunk_overlap  = 0L,
                                       verbose        = interactive(),
+                                      gc_every       = 1L,
+                                      max_tokens     = NULL,
                                       ...) {
   chunk_strategy <- match.arg(chunk_strategy)
+  gc_every       <- as.integer(gc_every)
+  batch_size     <- as.integer(batch_size)
+  if (is.null(max_tokens)) max_tokens <- Inf
+  if (!is.numeric(max_tokens) || length(max_tokens) != 1L || max_tokens < 1) {
+    stop("`max_tokens` must be NULL or a single positive number.")
+  }
 
   # Resolve the prefix: explicit argument beats encoder-stored value.
   if (is.null(prefix)) prefix <- encoder$prefix %||% ""
@@ -293,7 +325,7 @@ embed_texts.bert_encoder <- function(encoder, texts,
   if (chunk_strategy != "truncate") {
     return(.embed_chunked(encoder, texts, batch_size, max_length, normalize,
                           device, chunk_strategy, as.integer(chunk_overlap),
-                          verbose))
+                          verbose, gc_every, max_tokens))
   }
 
   model     <- encoder$model
@@ -306,61 +338,148 @@ embed_texts.bert_encoder <- function(encoder, texts,
   tokenizer$enable_padding()
   tokenizer$enable_truncation(max_length)
 
-  n <- length(texts)
-
-  # --- Smart batching: sort by approximate length to minimise padding waste ---
-  # Texts within a batch are padded to the longest sequence in that batch.
-  # Sorting by character length (a cheap proxy for token length) groups similar-
-  # length texts together, dramatically reducing wasted padding computation.
-  # We record the original order so results are returned in the input order.
-  order_idx    <- order(nchar(texts, type = "bytes"))
-  restore_idx  <- order(order_idx)
-  texts_sorted <- texts[order_idx]
-
-  # Pre-allocate the result matrix  --  avoids repeated rbind across batches.
-  # hidden_size is not known until after the first forward pass, so we fill it in then.
+  # Texts are tokenized in blocks so that token lengths are known before
+  # batches are formed (needed for max_tokens) without holding token IDs for
+  # the whole corpus at once.
+  n          <- length(texts)
+  block_size <- max(2048L, batch_size * 64L)
   result     <- NULL
-  hidden_size <- NULL
 
-  for (start in seq(1L, n, by = batch_size)) {
-    end   <- min(start + batch_size - 1L, n)
-    batch <- texts_sorted[start:end]
+  for (b_start in seq(1L, n, by = block_size)) {
+    b_end <- min(b_start + block_size - 1L, n)
 
-    enc   <- tokenizer$encode_batch(batch)
-    ids   <- lapply(enc, function(e) e$ids)
-    masks <- lapply(enc, function(e) e$attention_mask)
+    # encode_batch() pads to the longest text in the block; keep only the
+    # real tokens and let .embed_sequences() re-pad per batch.
+    enc <- tokenizer$encode_batch(texts[b_start:b_end])
+    ids <- lapply(enc, function(e) e$ids[e$attention_mask == 1L])
+    rm(enc)
 
-    Lmax  <- max(vapply(ids, length, integer(1L)))
-    pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
-    ids_m <- do.call(rbind, lapply(ids,   pad))
-    msk_m <- do.call(rbind, lapply(masks, pad))
-
-    input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
-    attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
-
-    torch::with_no_grad({
-      hidden <- model(input_ids, attn_mask)
-      pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
-      if (normalize) pooled <- torch::nnf_normalize(pooled, p = 2, dim = 2)
-    })
-
-    batch_arr <- as.matrix(pooled$cpu())
-
-    # Allocate result matrix on first batch now that hidden_size is known.
-    if (is.null(result)) {
-      hidden_size <- ncol(batch_arr)
-      result      <- matrix(0, nrow = n, ncol = hidden_size)
+    report <- if (verbose) function(k) {
+      message(sprintf("  embedded %d / %d", b_start - 1L + k, n))
     }
-    result[start:end, ] <- batch_arr
+    block_res <- .embed_sequences(model, ids, pooling, normalize, device,
+                                  batch_size, max_tokens, gc_every, report)
+    rm(ids)
 
-    if (verbose) message(sprintf("  embedded %d / %d", end, n))
+    # Pre-allocate the result matrix  --  avoids repeated rbind across blocks.
+    # hidden_size is not known until after the first forward pass.
+    if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(block_res))
+    result[b_start:b_end, ] <- block_res
+    rm(block_res)
   }
+  .release_memory(device)
 
-  # Restore original document order before returning.
-  result[restore_idx, , drop = FALSE]
+  result
 }
 
 
+# -----------------------------------------------------------------------------
+# .embed_sequences  --  embed a list of token-ID vectors in memory-aware batches
+#
+# SMART BATCHING
+# Sequences within a batch are padded to the longest one, so we sort by
+# token length to group similar lengths and minimise wasted padding.
+#
+# LONGEST FIRST
+# Batches run from longest to shortest.  The first batch then reserves the
+# largest memory blocks and every later (smaller) batch fits into them.  In
+# shortest-first order each batch needs slightly bigger blocks than the last,
+# and the allocator keeps grabbing new memory.  It also means an
+# out-of-memory error shows up immediately rather than at the end of a run.
+#
+# TOKEN BUDGET
+# A batch holds at most `batch_size` sequences and at most `max_tokens`
+# padded tokens (batch size x longest length).  Long texts therefore get
+# small batches and short texts large ones, keeping peak memory steady.
+#
+# Every sequence is real tokens only, so its attention mask is all ones.
+# Rows of the result are written straight to the input order.
+# -----------------------------------------------------------------------------
+
+.embed_sequences <- function(model, ids, pooling, normalize, device,
+                             batch_size, max_tokens, gc_every, report = NULL) {
+  n         <- length(ids)
+  lens      <- lengths(ids)
+  order_idx <- order(lens, decreasing = TRUE)
+  result    <- NULL
+  n_batch   <- 0L
+  start     <- 1L
+
+  while (start <= n) {
+    # The first sequence of each batch is its longest, so it sets the width.
+    width <- lens[order_idx[start]]
+    size  <- min(batch_size, max(1L, max_tokens %/% width))
+    end   <- min(start + size - 1L, n)
+    idx   <- order_idx[start:end]
+
+    batch_arr <- .forward_batch(model, ids[idx],
+                                lapply(lens[idx], function(l) rep(1L, l)),
+                                pooling, normalize, device,
+                                layer_gc = gc_every > 0L)
+
+    if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(batch_arr))
+    result[idx, ] <- batch_arr
+
+    n_batch <- n_batch + 1L
+    if (gc_every > 0L && n_batch %% gc_every == 0L) .release_memory(device)
+
+    if (!is.null(report)) report(end)
+    start <- end + 1L
+  }
+
+  result
+}
+
+
+# -----------------------------------------------------------------------------
+# .forward_batch  --  one forward pass, returned as a plain R matrix
+#
+# Keeping the tensors local to this function means they become unreachable
+# as soon as it returns, so the next .release_memory() call can free them.
+# -----------------------------------------------------------------------------
+
+.forward_batch <- function(model, ids, masks, pooling, normalize, device,
+                           layer_gc = TRUE) {
+  # Free each encoder layer's intermediates before the next one runs.
+  old <- options(rhobots.layer_gc = layer_gc)
+  on.exit(options(old), add = TRUE)
+
+  Lmax  <- max(vapply(ids, length, integer(1L)))
+  pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
+  ids_m <- do.call(rbind, lapply(ids,   pad))
+  msk_m <- do.call(rbind, lapply(masks, pad))
+
+  input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
+  attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
+
+  torch::with_no_grad({
+    hidden <- model(input_ids, attn_mask)
+    pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
+    if (normalize) pooled <- torch::nnf_normalize(pooled, p = 2, dim = 2)
+  })
+
+  as.matrix(pooled$cpu())
+}
+
+
+# -----------------------------------------------------------------------------
+# .release_memory  --  force R to finalise unreachable torch tensors
+#
+# A torch tensor looks like a tiny external pointer to R, even when it holds
+# hundreds of MB.  R therefore sees no memory pressure and postpones garbage
+# collection, letting dead batch tensors pile up.  gc() runs their finalisers;
+# on CUDA we additionally hand cached blocks back to the driver.
+# -----------------------------------------------------------------------------
+
+.release_memory <- function(device) {
+  gc(verbose = FALSE)
+  if (startsWith(as.character(device), "cuda") && torch::cuda_is_available()) {
+    torch::cuda_empty_cache()
+  }
+  invisible(NULL)
+}
+
+#' @rdname embed_texts
 #' @export
 embed_texts.default <- function(encoder, texts, ...) {
   stop("No embed_texts method for class '",
@@ -379,15 +498,16 @@ embed_texts.default <- function(encoder, texts, ...) {
 #
 # STRATEGY
 # --------
-# Rather than truncating, we:
+# Rather than truncating, we work through the corpus in blocks of documents
+# (so memory does not scale with corpus size) and for each block:
 #   1. Tokenize without truncation (up to the model's hard maximum).
 #   2. For texts that fit within max_length: use as-is (one chunk).
 #   3. For texts that exceed max_length: slide a window of max_length tokens
 #      over the body (stripping and re-adding [CLS] / [SEP] each time).
-#   4. Embed ALL chunks together in one batched forward pass.
+#   4. Embed the block's chunks in length-sorted batches.
 #   5. Aggregate per-document: average all chunk vectors (strategy="mean"),
 #      or use only the first chunk's vector (strategy="first").
-#   6. L2-normalise the final per-document vectors.
+# Finally the per-document vectors are L2-normalised.
 #
 # WHY PRESERVE [CLS] AND [SEP]?
 # The model was pre-trained to always see these special tokens at the sentence
@@ -401,7 +521,8 @@ embed_texts.default <- function(encoder, texts, ...) {
 # =============================================================================
 
 .embed_chunked <- function(encoder, texts, batch_size, max_length, normalize,
-                            device, strategy, overlap, verbose) {
+                            device, strategy, overlap, verbose, gc_every = 1L,
+                            max_tokens = Inf) {
   model     <- encoder$model
   tokenizer <- encoder$tokenizer
   pooling   <- encoder$pooling %||% "mean"
@@ -414,25 +535,33 @@ embed_texts.default <- function(encoder, texts, ...) {
   model_max <- encoder$config$max_position_embeddings %||% 512L
   tokenizer$enable_padding()
   tokenizer$enable_truncation(model_max)
-  all_enc <- tokenizer$encode_batch(texts)
 
-  # Build a flat list of all chunks across all documents.
-  # chunk_origin[i] = index of the original document that chunk i came from.
-  # This lets us reassemble per-document aggregations after batch embedding.
-  chunk_ids    <- list()
-  chunk_masks  <- list()
-  chunk_origin <- integer(0)
+  # Documents are processed in blocks so that only one block's token IDs and
+  # chunk lists are held in memory at a time, instead of the whole corpus.
+  n          <- length(texts)
+  block_size <- max(2048L, batch_size * 64L)
+  result     <- NULL
 
-  for (i in seq_along(texts)) {
-    ids    <- all_enc[[i]]$ids
-    n_toks <- length(ids)
+  for (b_start in seq(1L, n, by = block_size)) {
+    b_end <- min(b_start + block_size - 1L, n)
+    if (verbose && n > block_size) {
+      message(sprintf("  documents %d - %d / %d", b_start, b_end, n))
+    }
 
-    if (n_toks <= max_length) {
+    all_enc <- tokenizer$encode_batch(texts[b_start:b_end])
+
+    # Split every document into chunks.  Each element of `per_doc` holds the
+    # chunk token-ID vectors for one document; chunk_origin[i] records which
+    # (block-local) document chunk i came from so we can reassemble later.
+    per_doc <- lapply(all_enc, function(e) {
+      # encode_batch() pads every document to the longest one in the block;
+      # keep only the real tokens so [SEP] and the token count are correct.
+      ids    <- e$ids[e$attention_mask == 1L]
+      n_toks <- length(ids)
+
       # Document fits in one chunk  --  use as-is.
-      chunk_ids    <- c(chunk_ids,    list(ids))
-      chunk_masks  <- c(chunk_masks,  list(all_enc[[i]]$attention_mask))
-      chunk_origin <- c(chunk_origin, i)
-    } else {
+      if (n_toks <= max_length) return(list(ids))
+
       # Extract special tokens from the first and last positions.
       # Standard tokenisers always place [CLS] first and [SEP] last.
       cls_id <- ids[1L]
@@ -454,82 +583,46 @@ embed_texts.default <- function(encoder, texts, ...) {
       starts <- seq(1L, length(body), by = stride)
       if (strategy == "first") starts <- starts[1L]   # only use the first window
 
-      for (s in starts) {
-        e     <- min(s + body_size - 1L, length(body))   # end of this window
-        chunk <- c(cls_id, body[s:e], sep_id)            # re-add special tokens
-
-        # All body tokens in the chunk are real (mask = 1).
-        chunk_ids    <- c(chunk_ids,    list(chunk))
-        chunk_masks  <- c(chunk_masks,  list(rep(1L, length(chunk))))
-        chunk_origin <- c(chunk_origin, i)
-      }
-    }
-  }
-
-  # Batch-embed all chunks (from all documents) together.
-  # Sort chunks by length for the same padding-efficiency reason as the main path.
-  n_chunks     <- length(chunk_ids)
-  chunk_order  <- order(vapply(chunk_ids, length, integer(1L)))
-  chunk_ids    <- chunk_ids[chunk_order]
-  chunk_masks  <- chunk_masks[chunk_order]
-  chunk_origin <- chunk_origin[chunk_order]
-
-  all_chunk_emb <- NULL
-
-  for (start in seq(1L, n_chunks, by = batch_size)) {
-    end   <- min(start + batch_size - 1L, n_chunks)
-    b_ids <- chunk_ids[start:end]
-    b_msk <- chunk_masks[start:end]
-
-    Lmax  <- max(vapply(b_ids, length, integer(1L)))
-    pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
-    ids_m <- do.call(rbind, lapply(b_ids, pad))
-    msk_m <- do.call(rbind, lapply(b_msk, pad))
-
-    input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())$to(device = device)
-    attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())$to(device = device)
-
-    torch::with_no_grad({
-      hidden <- model(input_ids, attn_mask)
-      pooled <- if (pooling == "cls") cls_pool(hidden) else mean_pool(hidden, attn_mask)
-      # Normalisation applied to the aggregated document vector, not individual chunks.
+      lapply(starts, function(s) {
+        e <- min(s + body_size - 1L, length(body))   # end of this window
+        c(cls_id, body[s:e], sep_id)                 # re-add special tokens
+      })
     })
+    rm(all_enc)
 
-    batch_arr <- as.matrix(pooled$cpu())
-    if (is.null(all_chunk_emb)) {
-      all_chunk_emb <- matrix(0, nrow = n_chunks, ncol = ncol(batch_arr))
+    chunk_ids    <- unlist(per_doc, recursive = FALSE)
+    chunk_origin <- rep(seq_along(per_doc), lengths(per_doc))
+    rm(per_doc)
+
+    # Embed all chunks of the block.  Normalisation is applied to the
+    # aggregated document vector, not individual chunks.
+    n_chunks <- length(chunk_ids)
+    report   <- if (verbose) function(k) {
+      message(sprintf("  embedded %d / %d chunks", k, n_chunks))
     }
-    all_chunk_emb[start:end, ] <- batch_arr
+    chunk_emb <- .embed_sequences(model, chunk_ids, pooling, normalize = FALSE,
+                                  device, batch_size, max_tokens, gc_every,
+                                  report)
 
-    if (verbose) message(sprintf("  embedded %d / %d chunks", end, n_chunks))
-  }
+    # Aggregate chunk embeddings back into one vector per document: sum the
+    # chunks of each document with rowsum() and divide by the chunk count.
+    # This gives equal weight to each window, which is a reasonable default.
+    block_res <- rowsum(chunk_emb, chunk_origin, reorder = TRUE) /
+                 tabulate(chunk_origin, nbins = b_end - b_start + 1L)
 
-  # Aggregate chunk embeddings back into one vector per original document.
-  n           <- length(texts)
-  hidden_size <- ncol(all_chunk_emb)
-  result      <- matrix(0, nrow = n, ncol = hidden_size)
-
-  for (i in seq_len(n)) {
-    # Find all chunk indices that belong to document i.
-    cidx_i <- which(chunk_origin == i)
-
-    if (length(cidx_i) == 1L) {
-      # Single chunk: just copy directly  --  colMeans on one row has overhead.
-      result[i, ] <- all_chunk_emb[cidx_i, ]
-    } else {
-      # Multiple chunks: average their embedding vectors.
-      # This gives equal weight to each window, which is a reasonable default.
-      result[i, ] <- colMeans(all_chunk_emb[cidx_i, , drop = FALSE])
+    # L2 normalise the aggregated document vectors.  Done per block (rows are
+    # independent) so the full result matrix is never copied.
+    if (normalize) {
+      norms             <- sqrt(rowSums(block_res^2))
+      norms[norms == 0] <- 1   # avoid dividing a zero vector by zero
+      block_res         <- block_res / norms
     }
-  }
 
-  # L2 normalise the aggregated document vectors.
-  # We do this in R rather than torch because result is already an R matrix.
-  if (normalize) {
-    norms          <- sqrt(rowSums(result^2))
-    norms[norms == 0] <- 1   # avoid dividing a zero vector by zero
-    result         <- result / norms
+    if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(block_res))
+    result[b_start:b_end, ] <- block_res
+    rm(chunk_ids, chunk_emb, block_res)
   }
+  .release_memory(device)
 
   result   # (n_texts x hidden_size) numeric matrix
 }

@@ -4,7 +4,12 @@
 \alias{topic_quality}
 \title{Evaluate topic quality for a fitted BERTopic model}
 \usage{
-topic_quality(fit, top_n = 10L, sample_size = 2000L)
+topic_quality(
+  fit,
+  top_n = 10L,
+  sample_size = 2000L,
+  space = c("original", "reduced")
+)
 }
 \arguments{
 \item{fit}{A \code{bertopic_fit} object from \code{\link{fit_bertopic}}.}
@@ -15,6 +20,13 @@ overlap computation. Default 10.}
 \item{sample_size}{Maximum number of non-noise documents used when computing
 the silhouette score (which requires an \eqn{n \times n} distance matrix).
 Set to \code{NULL} for exact computation. Default 2000.}
+
+\item{space}{Embedding space used for cohesion, separation, and silhouette.
+\code{"original"} (default) uses the full encoder embedding (e.g. 384-D);
+\code{"reduced"} uses the UMAP-reduced embedding stored in
+\code{fit$reduced}.  The reduced space reflects the actual input to HDBSCAN
+and shows more variation across different UMAP/HDBSCAN parameter choices,
+making it the natural choice when comparing sweep runs.}
 }
 \value{
 A list of class \code{topic_quality} with elements:

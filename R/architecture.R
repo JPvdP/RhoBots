@@ -445,10 +445,23 @@ bert_layer <- torch::nn_module(
   forward = function(x, mask) {
     a <- self$attention(x, mask)      # attention: contextualise each token
     i <- self$intermediate(a)         # FFN expand: (B, L, H) -> (B, L, 4H)
-    h <- self$output(i, a)            # FFN contract: back to (B, L, H) + residual
 
-    # Apply Pfeiffer adapter if one was injected (SPECTER2 only).
-    if (!is.null(self$adapter)) h <- self$adapter(h)
+    if (!is.null(self$adapter)) {
+      # SPECTER2 Pfeiffer config: original_ln_before=T, original_ln_after=T,
+      # residual_before_ln=T.  The adapters library pre_forward/post_forward
+      # sequence is:
+      #   1. h_raw  = dense(i)                  — FFN contract, no residual yet
+      #   2. ln_out = LN(h_raw + attn)           — standard BertOutput LN
+      #   3. delta  = up(relu(down(ln_out)))      — adapter, input = ln_out
+      #   4. adapter residual = h_raw (pre-LN), NOT ln_out
+      #   5. final  = LN(delta + h_raw + attn)   — post-adapter LN (original_ln_after)
+      h_raw  <- self$output$dense(i)
+      ln_out <- self$output$LayerNorm(h_raw + a)
+      delta  <- self$adapter$adapter_up(torch::nnf_relu(self$adapter$adapter_down(ln_out)))
+      h      <- self$output$LayerNorm(delta + h_raw + a)
+    } else {
+      h <- self$output(i, a)          # standard: LN(dense(i) + a)
+    }
     h
   }
 )
@@ -482,10 +495,28 @@ bert_encoder <- torch::nn_module(
     # Pass hidden states through each transformer layer in turn.
     for (i in seq_along(self$layer)) {
       x <- self$layer[[i]](x, mask)
+      .layer_gc()
     }
     x   # (batch_size, seq_len, hidden_size)
   }
 )
+
+
+# -----------------------------------------------------------------------------
+# .layer_gc  --  free a finished layer's intermediate tensors
+#
+# Each layer creates several (B, num_heads, L, L) attention tensors.  R does
+# not see their size, so without help all layers' intermediates stay alive
+# until the whole forward pass ends.  embed_texts() switches this on via the
+# `rhobots.layer_gc` option so only one layer's worth is alive at a time.
+# A minor collection (full = FALSE) is enough because the intermediates were
+# just created, and it costs ~2 ms instead of ~80 ms for a full one.
+# -----------------------------------------------------------------------------
+
+.layer_gc <- function() {
+  if (isTRUE(getOption("rhobots.layer_gc"))) gc(verbose = FALSE, full = FALSE)
+  invisible(NULL)
+}
 
 
 # -----------------------------------------------------------------------------
@@ -877,6 +908,7 @@ mpnet_encoder <- torch::nn_module(
 
     for (i in seq_along(self$layer)) {
       x <- self$layer[[i]](x, mask, bias)
+      .layer_gc()
     }
     x   # (batch_size, seq_len, hidden_size)
   },

@@ -57,31 +57,33 @@
     return(weights)
   }
   if (grepl("\\.(bin|pth|pt)$", path, ignore.case = TRUE)) {
-    # Detect pre-1.6 PyTorch legacy pickle format (magic byte 0x80).
-    # PyTorchStreamReader (used by load_state_dict) only handles the zip
-    # container introduced in PyTorch 1.6 (2020); old-format files need
-    # Python to convert first.
     magic <- tryCatch(readBin(path, what = "raw", n = 2L),
                       error = function(e) raw(0))
-    if (length(magic) >= 1L && magic[1] == as.raw(0x80)) {
+    # Legacy pickle format (pre-PyTorch 1.6): first byte 0x80
+    is_legacy_pickle <- length(magic) >= 1L && magic[1] == as.raw(0x80)
+    # ZIP-archive format (PyTorch 1.6+): magic bytes PK = 0x50 0x4B
+    # R torch cannot unpack Python's ZIP checkpoints via torch_load either.
+    is_zip_archive   <- length(magic) >= 2L &&
+                        magic[1] == as.raw(0x50) && magic[2] == as.raw(0x4B)
+    if (is_legacy_pickle || is_zip_archive) {
+      fname <- basename(path)
+      fmt   <- if (is_zip_archive) "ZIP-archive (PyTorch 1.6+)" else "legacy pickle (pre-PyTorch 1.6)"
       stop(
-        "This model's pytorch_model.bin uses the legacy pickle format",
-        " (pre-PyTorch 1.6),\n",
-        "which R torch cannot read. Convert it to safetensors first:\n\n",
-        "  # In Python (pip install torch safetensors huggingface_hub):\n",
+        fname, " is in Python's ", fmt, " format,\n",
+        "which R torch cannot read.  Convert it to safetensors first:\n\n",
+        "  # In Python (pip install torch safetensors):\n",
         "  import torch\n",
         "  from safetensors.torch import save_file\n",
-        "  sd = torch.load(\"pytorch_model.bin\", map_location=\"cpu\",",
-        " weights_only=False)\n",
+        "  sd = torch.load(\"", fname, "\", map_location=\"cpu\", weights_only=False)\n",
         "  save_file(sd, \"model.safetensors\")\n\n",
-        "Then pass the converted file via:\n",
-        "  load_hf_bert(\"<repo_id>\", weights_path = \"/path/to/model.safetensors\")"
+        "Then pass the converted file via weights_path:\n",
+        "  load_hf_bert(\"<repo_id>\", weights_path = \"/path/to/model.safetensors\")\n",
+        "  load_specter2(weights_path = \"/path/to/model.safetensors\")  # base model\n",
+        "  load_specter2(adapter_weights_path = \"/path/to/model.safetensors\")  # adapter"
       )
     }
-    # map_location = "cpu" forces weights onto CPU even if the .bin was saved
-    # on a GPU machine; prevents aten::empty_strided CUDA errors.
-    weights <- torch::torch_load(path,
-                                 map_location = torch::torch_device("cpu"))
+    # Only R-saved .pt/.pth files (torch::torch_save) reach here.
+    weights <- torch::torch_load(path, device = "cpu")
     return(as.list(weights))
   }
   stop("Unknown weight file format: ", path,

@@ -11,47 +11,50 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // hdbscan_boruvka_cpp
-List hdbscan_boruvka_cpp(IntegerMatrix knn_idx, NumericMatrix knn_dist, int min_pts);
-RcppExport SEXP _Rhobots_hdbscan_boruvka_cpp(SEXP knn_idxSEXP, SEXP knn_distSEXP, SEXP min_ptsSEXP) {
+List hdbscan_boruvka_cpp(IntegerMatrix knn_idx, NumericMatrix knn_dist, int min_pts, bool allow_single_cluster);
+RcppExport SEXP _Rhobots_hdbscan_boruvka_cpp(SEXP knn_idxSEXP, SEXP knn_distSEXP, SEXP min_ptsSEXP, SEXP allow_single_clusterSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< IntegerMatrix >::type knn_idx(knn_idxSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type knn_dist(knn_distSEXP);
     Rcpp::traits::input_parameter< int >::type min_pts(min_ptsSEXP);
-    rcpp_result_gen = Rcpp::wrap(hdbscan_boruvka_cpp(knn_idx, knn_dist, min_pts));
+    Rcpp::traits::input_parameter< bool >::type allow_single_cluster(allow_single_clusterSEXP);
+    rcpp_result_gen = Rcpp::wrap(hdbscan_boruvka_cpp(knn_idx, knn_dist, min_pts, allow_single_cluster));
     return rcpp_result_gen;
 END_RCPP
 }
 // hdbscan_kdtree_cpp
-List hdbscan_kdtree_cpp(NumericMatrix X, int min_pts);
-RcppExport SEXP _Rhobots_hdbscan_kdtree_cpp(SEXP XSEXP, SEXP min_ptsSEXP) {
+List hdbscan_kdtree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluster);
+RcppExport SEXP _Rhobots_hdbscan_kdtree_cpp(SEXP XSEXP, SEXP min_ptsSEXP, SEXP allow_single_clusterSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< int >::type min_pts(min_ptsSEXP);
-    rcpp_result_gen = Rcpp::wrap(hdbscan_kdtree_cpp(X, min_pts));
+    Rcpp::traits::input_parameter< bool >::type allow_single_cluster(allow_single_clusterSEXP);
+    rcpp_result_gen = Rcpp::wrap(hdbscan_kdtree_cpp(X, min_pts, allow_single_cluster));
     return rcpp_result_gen;
 END_RCPP
 }
 // hdbscan_balltree_cpp
-List hdbscan_balltree_cpp(NumericMatrix X, int min_pts);
-RcppExport SEXP _Rhobots_hdbscan_balltree_cpp(SEXP XSEXP, SEXP min_ptsSEXP) {
+List hdbscan_balltree_cpp(NumericMatrix X, int min_pts, bool allow_single_cluster);
+RcppExport SEXP _Rhobots_hdbscan_balltree_cpp(SEXP XSEXP, SEXP min_ptsSEXP, SEXP allow_single_clusterSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< int >::type min_pts(min_ptsSEXP);
-    rcpp_result_gen = Rcpp::wrap(hdbscan_balltree_cpp(X, min_pts));
+    Rcpp::traits::input_parameter< bool >::type allow_single_cluster(allow_single_clusterSEXP);
+    rcpp_result_gen = Rcpp::wrap(hdbscan_balltree_cpp(X, min_pts, allow_single_cluster));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_Rhobots_hdbscan_boruvka_cpp", (DL_FUNC) &_Rhobots_hdbscan_boruvka_cpp, 3},
-    {"_Rhobots_hdbscan_kdtree_cpp", (DL_FUNC) &_Rhobots_hdbscan_kdtree_cpp, 2},
-    {"_Rhobots_hdbscan_balltree_cpp", (DL_FUNC) &_Rhobots_hdbscan_balltree_cpp, 2},
+    {"_Rhobots_hdbscan_boruvka_cpp", (DL_FUNC) &_Rhobots_hdbscan_boruvka_cpp, 4},
+    {"_Rhobots_hdbscan_kdtree_cpp", (DL_FUNC) &_Rhobots_hdbscan_kdtree_cpp, 3},
+    {"_Rhobots_hdbscan_balltree_cpp", (DL_FUNC) &_Rhobots_hdbscan_balltree_cpp, 3},
     {NULL, NULL, 0}
 };
 

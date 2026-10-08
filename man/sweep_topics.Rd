@@ -18,6 +18,7 @@ sweep_topics(
   sample_size = NULL,
   quality_top_n = 10L,
   quality_sample = 500L,
+  quality_space = "reduced",
   seed = 42L,
   verbose = TRUE
 )
@@ -57,6 +58,15 @@ documents before sweeping.  Useful for fast exploration on large corpora.}
 
 \item{quality_sample}{Passed to \code{\link{topic_quality}} as
 \code{sample_size} for the silhouette computation. Default 500.}
+
+\item{quality_space}{Embedding space for quality metrics; passed to
+\code{\link{topic_quality}} as \code{space}.  Defaults to
+\code{"reduced"}, which measures cohesion, separation, and silhouette in
+the UMAP-reduced space — the space where different \code{n_components} and
+\code{n_neighbors} choices produce different cluster structures.  Set to
+\code{"original"} to match standalone \code{topic_quality()} behaviour
+(full encoder embedding), but be aware that original-space metrics barely
+vary across sweep runs for well-separated corpora.}
 
 \item{seed}{Random seed for reproducibility.}
 

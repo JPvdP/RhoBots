@@ -4,6 +4,7 @@
 \alias{embed_texts.api_embedder}
 \alias{embed_texts}
 \alias{embed_texts.bert_encoder}
+\alias{embed_texts.default}
 \title{Embed a vector of texts to a numeric matrix}
 \usage{
 \method{embed_texts}{api_embedder}(
@@ -29,8 +30,12 @@ embed_texts(encoder, texts, ...)
   chunk_strategy = c("truncate", "mean", "first"),
   chunk_overlap = 0L,
   verbose = interactive(),
+  gc_every = 1L,
+  max_tokens = NULL,
   ...
 )
+
+\method{embed_texts}{default}(encoder, texts, ...)
 }
 \arguments{
 \item{encoder}{A loaded encoder: a \code{bert_encoder} from \code{\link[=load_hf_bert]{load_hf_bert()}} /
@@ -62,6 +67,22 @@ special tokens).  Capped at the model's \code{max_position_embeddings}.}
 
 \item{chunk_overlap}{Number of token overlap between consecutive windows
 when \code{chunk_strategy != "truncate"}. Default 0.}
+
+\item{gc_every}{Release memory held by finished batches every \code{gc_every}
+batches (default 1).  Torch tensors live outside R's heap, so R does not
+see how much memory they use and may not free them in time on large
+corpora.  Higher values trade a little memory for slightly less overhead.
+Unless \code{gc_every = 0}, memory is also released after every encoder layer,
+so only one layer's attention tensors are alive at a time.  \code{0} disables
+all cleanup.  Ignored for \code{api_embedder}.}
+
+\item{max_tokens}{Upper limit on padded tokens per forward pass (number of
+texts in the batch times the longest one).  Memory per batch grows with
+sequence length, so this caps it: batches of long texts are made smaller,
+while short texts still go up to \code{batch_size} per batch.  \code{NULL}
+(default) means no limit beyond \code{batch_size}.  For example
+\verb{batch_size = 128, max_tokens = 8192} gives 128 short texts per batch but
+only 16 texts of 512 tokens.  Ignored for \code{api_embedder}.}
 }
 \value{
 A numeric matrix with \code{length(texts)} rows and \code{hidden_size} cols.
