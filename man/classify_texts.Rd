@@ -14,6 +14,8 @@ classify_texts(classifier, texts, ...)
   batch_size = 32L,
   max_length = 512L,
   verbose = FALSE,
+  max_tokens = NULL,
+  gc_every = 1L,
   ...
 )
 
@@ -32,6 +34,14 @@ classify_texts(classifier, texts, ...)
 Sequences are truncated to this value. Default 512.}
 
 \item{verbose}{Print batch progress. Default FALSE.}
+
+\item{max_tokens}{Upper limit on padded tokens per forward pass (number of
+texts in the batch times the longest one).  Long texts then get smaller
+batches, keeping peak memory steady.  \code{NULL} (default) means no limit
+beyond \code{batch_size}.  See \code{\link[=embed_texts]{embed_texts()}}.}
+
+\item{gc_every}{Release memory held by finished batches every \code{gc_every}
+batches (default 1); \code{0} disables cleanup.  See \code{\link[=embed_texts]{embed_texts()}}.}
 }
 \value{
 For sequence tasks: a \code{data.frame} with \code{nrow(texts)} rows.

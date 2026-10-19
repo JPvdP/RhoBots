@@ -398,36 +398,55 @@ embed_texts.bert_encoder <- function(encoder, texts,
 
 .embed_sequences <- function(model, ids, pooling, normalize, device,
                              batch_size, max_tokens, gc_every, report = NULL) {
-  n         <- length(ids)
-  lens      <- lengths(ids)
-  order_idx <- order(lens, decreasing = TRUE)
-  result    <- NULL
-  n_batch   <- 0L
-  start     <- 1L
+  lens    <- lengths(ids)
+  result  <- NULL
+  n_done  <- 0L
+  batches <- .batch_plan(lens, batch_size, max_tokens)
 
-  while (start <= n) {
-    # The first sequence of each batch is its longest, so it sets the width.
-    width <- lens[order_idx[start]]
-    size  <- min(batch_size, max(1L, max_tokens %/% width))
-    end   <- min(start + size - 1L, n)
-    idx   <- order_idx[start:end]
-
+  for (b in seq_along(batches)) {
+    idx <- batches[[b]]
     batch_arr <- .forward_batch(model, ids[idx],
                                 lapply(lens[idx], function(l) rep(1L, l)),
                                 pooling, normalize, device,
                                 layer_gc = gc_every > 0L)
 
-    if (is.null(result)) result <- matrix(0, nrow = n, ncol = ncol(batch_arr))
+    if (is.null(result)) result <- matrix(0, nrow = length(ids), ncol = ncol(batch_arr))
     result[idx, ] <- batch_arr
 
-    n_batch <- n_batch + 1L
-    if (gc_every > 0L && n_batch %% gc_every == 0L) .release_memory(device)
+    if (gc_every > 0L && b %% gc_every == 0L) .release_memory(device)
 
-    if (!is.null(report)) report(end)
-    start <- end + 1L
+    n_done <- n_done + length(idx)
+    if (!is.null(report)) report(n_done)
   }
 
   result
+}
+
+
+# -----------------------------------------------------------------------------
+# .batch_plan  --  split sequences into batches, longest first
+#
+# Returns a list of index vectors into `lens`.  Each batch holds at most
+# `batch_size` sequences and at most `max_tokens` padded tokens (batch size x
+# its longest sequence, which is its first one).  Shared by embed_texts() and
+# classify_texts().
+# -----------------------------------------------------------------------------
+
+.batch_plan <- function(lens, batch_size, max_tokens) {
+  n         <- length(lens)
+  order_idx <- order(lens, decreasing = TRUE)
+  batches   <- list()
+  start     <- 1L
+
+  while (start <= n) {
+    width   <- lens[order_idx[start]]
+    size    <- min(batch_size, max(1L, max_tokens %/% width))
+    end     <- min(start + size - 1L, n)
+    batches[[length(batches) + 1L]] <- order_idx[start:end]
+    start   <- end + 1L
+  }
+
+  batches
 }
 
 
