@@ -1,6 +1,18 @@
 # Rhobots (development version)
 
+## New features
+
+* DistilBERT models now work in `load_hf_bert()` and
+  `load_hf_classifier()` (sequence and token classification).  DistilBERT
+  was listed as supported before but failed to load.  This opens up many
+  emotion, sentiment and NER models, e.g.
+  `bhadresh-savani/distilbert-base-uncased-emotion`.
+
 ## Bug fixes
+
+* `classify_texts()` on NER / token-classification models returned no
+  tokens: the token strings were read from a field the tokenizer does not
+  provide.  Output now matches Python `transformers`.
 
 * `embed_texts(chunk_strategy = "mean" / "first")` treated padding as real
   text: short documents were padded to the longest document in the batch,
@@ -31,6 +43,10 @@
     therefore appears at the start of a run, not the end.
   * Texts are tokenized and chunked in blocks of documents, and the result
     matrix is no longer copied during reordering or normalisation.
+* `classify_texts()` uses the same memory strategy as `embed_texts()`
+  (block tokenization, longest-first batching, memory freed after every
+  batch and layer) and gains the `max_tokens` and `gc_every` arguments.
+  Its `text` column now shows the input texts without the model prefix.
 
 # Rhobots 0.1.10
 
