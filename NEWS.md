@@ -2,6 +2,12 @@
 
 ## New features
 
+* New `detect_emotions()` for emotion analysis with checked preset models:
+  `"ekman"` (six basic emotions + neutral), `"goemotions"` (28 emotions,
+  several per text) and `"vad"` (valence, arousal, dominance on EmoBank's
+  1-5 scale).  It returns a tidy data frame, records which model was used,
+  and keeps loaded models in memory for the session.  Any HuggingFace
+  emotion model also works.  `emotion_models()` lists the presets.
 * DistilBERT models now work in `load_hf_bert()` and
   `load_hf_classifier()` (sequence and token classification).  DistilBERT
   was listed as supported before but failed to load.  This opens up many
