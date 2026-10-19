@@ -89,7 +89,7 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
 
   # --- config ---
   cfg_path <- hfhub::hub_download(repo_id, "config.json")
-  cfg_raw  <- jsonlite::fromJSON(cfg_path)
+  cfg_raw  <- .distilbert_config(jsonlite::fromJSON(cfg_path))
   model_type <- cfg_raw$model_type %||% "bert"
 
   # Reject architectures that are not BERT-family and cannot be loaded with
@@ -114,6 +114,7 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
     type_vocab_size                 = cfg_raw$type_vocab_size %||% 2L,
     layer_norm_eps                  = cfg_raw$layer_norm_eps  %||% 1e-12,
     model_type                      = model_type,
+    activation                      = cfg_raw$activation,
     relative_attention_num_buckets  = cfg_raw$relative_attention_num_buckets %||% 32L
   )
 
@@ -178,7 +179,10 @@ load_hf_bert <- function(repo_id, weights_path = NULL, prefix = "") {
     message("  Pooling: CLS token (from 1_Pooling/config.json)")
 
   # --- assemble ---
-  model <- if (model_type == "mpnet") mpnet_model(cfg) else bert_model(cfg)
+  model <- switch(model_type,
+                  mpnet      = mpnet_model(cfg),
+                  distilbert = distilbert_model(cfg),
+                  bert_model(cfg))
   load_bert_weights(model, weights_path, strict = FALSE)
   model$eval()
   structure(

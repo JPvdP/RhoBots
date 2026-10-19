@@ -56,7 +56,7 @@
 #' }
 #'
 #' Supported backbone architectures: the same as [load_hf_bert()]  --  BERT,
-#' RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT (backbone only), MPNet.
+#' RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT, MPNet.
 #'
 #' @param repo_id HuggingFace repo ID, e.g. `"cardiffnlp/twitter-xlm-roberta-base-sentiment"`
 #'   or `"RobroKools/vad-bert"`.
@@ -97,7 +97,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
 
   # -- config ------------------------------------------------------------------
   cfg_path   <- hfhub::hub_download(repo_id, "config.json")
-  cfg_raw    <- jsonlite::fromJSON(cfg_path)
+  cfg_raw    <- .distilbert_config(jsonlite::fromJSON(cfg_path))
   model_type <- cfg_raw$model_type %||% "bert"
 
   .supported <- c("bert", "roberta", "xlm-roberta", "camembert",
@@ -137,6 +137,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
     hidden_dropout_prob            = cfg_raw$hidden_dropout_prob   %||% 0.1,
     classifier_dropout             = cfg_raw$classifier_dropout,   # may be NULL
     model_type                     = model_type,
+    activation                     = cfg_raw$activation,
     num_labels                     = as.integer(num_labels),
     relative_attention_num_buckets = cfg_raw$relative_attention_num_buckets %||% 32L
   )
@@ -163,15 +164,20 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
 
   # -- build model -------------------------------------------------------------
   # Dispatch on task x model_type to pick the right head architecture.
-  model <- if (task == "ner") {
+  model <- if (task == "ner" && model_type == "distilbert") {
+    distilbert_for_token_classification(cfg)
+  } else if (task == "ner") {
     # Token classification head is identical for BERT and RoBERTa  -- 
     # both store "classifier.*" at the top level of the checkpoint.
     bert_for_token_classification(cfg)
+  } else if (model_type == "distilbert") {
+    # DistilBERT: first token -> pre_classifier -> ReLU -> classifier.
+    distilbert_for_classification(cfg)
   } else if (model_type %in% c("roberta", "xlm-roberta", "camembert")) {
     # RoBERTa-family uses its own head (no separate pooler).
     roberta_for_classification(cfg)
   } else {
-    # BERT, DistilBERT, MPNet-like -> BERT-style head with pooler.
+    # BERT, MPNet-like -> BERT-style head with pooler.
     bert_for_classification(cfg)
   }
 
@@ -194,18 +200,52 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
     make_wordpiece_tokenizer(vocab_path, do_lower_case = do_lower)
   })
 
+  # NER output needs the token strings, which tok's encodings do not carry.
+  id2token <- if (task == "ner") .load_id2token(repo_id) else NULL
+
   structure(
     list(model        = model,
          tokenizer    = tokenizer,
          config       = cfg,
          repo_id      = repo_id,
          id2label     = id2label,
+         id2token     = id2token,
          problem_type = problem_type,
          task         = task,
          num_labels   = as.integer(num_labels),
          prefix       = prefix),
     class = c("hf_classifier", "list")
   )
+}
+
+
+# -----------------------------------------------------------------------------
+# .load_id2token  --  vocabulary lookup from token ID to token string
+#
+# The tok package returns only token IDs and attention masks, so NER output
+# looks the token strings up here.  Element i + 1 is the string for ID i, as
+# in Python's tokenizer.convert_ids_to_tokens() (e.g. "##ie" for a WordPiece
+# continuation, "ĠParis" for a RoBERTa word that follows a space).
+# -----------------------------------------------------------------------------
+
+.load_id2token <- function(repo_id) {
+  tj <- tryCatch(hfhub::hub_download(repo_id, "tokenizer.json"),
+                 error = function(e) NULL)
+  if (!is.null(tj)) {
+    j     <- jsonlite::fromJSON(tj, simplifyVector = FALSE)
+    vocab <- unlist(j$model$vocab)                     # token -> id
+    added <- j$added_tokens %||% list()
+    ids   <- c(unname(vocab), vapply(added, function(a) as.integer(a$id), 1L))
+    toks  <- c(names(vocab),  vapply(added, function(a) a$content, ""))
+    out   <- character(max(ids) + 1L)
+    out[ids + 1L] <- toks
+    return(out)
+  }
+  # WordPiece models without tokenizer.json: line i of vocab.txt is ID i - 1.
+  vp <- tryCatch(hfhub::hub_download(repo_id, "vocab.txt"), error = function(e) NULL)
+  if (is.null(vp))
+    stop("Model ", repo_id, " provides neither tokenizer.json nor vocab.txt.")
+  readLines(vp, encoding = "UTF-8", warn = FALSE)
 }
 
 
@@ -264,6 +304,12 @@ print.hf_classifier <- function(x, ...) {
 #' @param max_length Maximum token sequence length (including special tokens).
 #'   Sequences are truncated to this value. Default 512.
 #' @param verbose Print batch progress. Default FALSE.
+#' @param max_tokens Upper limit on padded tokens per forward pass (number of
+#'   texts in the batch times the longest one).  Long texts then get smaller
+#'   batches, keeping peak memory steady.  `NULL` (default) means no limit
+#'   beyond `batch_size`.  See [embed_texts()].
+#' @param gc_every Release memory held by finished batches every `gc_every`
+#'   batches (default 1); `0` disables cleanup.  See [embed_texts()].
 #' @param ... Unused (for future extension).
 #' @return For sequence tasks: a `data.frame` with `nrow(texts)` rows.
 #'   For NER: a `list` of `data.frame`s, one per input text.
@@ -294,66 +340,113 @@ classify_texts.hf_classifier <- function(classifier, texts,
                                           batch_size = 32L,
                                           max_length = 512L,
                                           verbose    = FALSE,
+                                          max_tokens = NULL,
+                                          gc_every   = 1L,
                                           ...) {
-  model     <- classifier$model
-  tokenizer <- classifier$tokenizer
-  id2label  <- classifier$id2label
-  problem   <- classifier$problem_type
-  task      <- classifier$task
+  model      <- classifier$model
+  tokenizer  <- classifier$tokenizer
+  task       <- classifier$task
+  batch_size <- as.integer(batch_size)
+  gc_every   <- as.integer(gc_every)
+  if (is.null(max_tokens)) max_tokens <- Inf
+  if (!is.numeric(max_tokens) || length(max_tokens) != 1L || max_tokens < 1) {
+    stop("`max_tokens` must be NULL or a single positive number.")
+  }
 
   model$eval()
 
-  # Apply instruction prefix if the model needs one.
+  # Apply instruction prefix if the model needs one (output keeps the
+  # original texts).
   prefix <- classifier$prefix %||% ""
-  if (nzchar(prefix)) texts <- paste0(prefix, texts)
+  inputs <- if (nzchar(prefix)) paste0(prefix, texts) else texts
 
   tokenizer$enable_padding()
   tokenizer$enable_truncation(as.integer(max_length))
 
-  n         <- length(texts)
-  logit_buf <- vector("list", ceiling(n / batch_size))  # stores raw model output
-  enc_buf   <- vector("list", ceiling(n / batch_size))  # stores tok Encodings (NER)
-  mask_buf  <- vector("list", ceiling(n / batch_size))  # stores attention masks (NER)
+  # Same memory strategy as embed_texts(): tokenize in blocks of documents,
+  # batch by token length (longest first, capped by max_tokens), and free
+  # torch memory after every batch and encoder layer.
+  n          <- length(texts)
+  block_size <- max(2048L, batch_size * 64L)
+  seq_logits <- NULL                      # (n, num_labels) for sequence tasks
+  tok_logits <- vector("list", n)         # per-text (L_i, num_labels) for NER
+  ids_all    <- vector("list", n)         # per-text token IDs for NER
+  n_batch    <- 0L
+  n_done     <- 0L
 
-  idx <- 0L
-  torch::with_no_grad({
-    for (start in seq(1L, n, by = as.integer(batch_size))) {
-      end   <- min(start + as.integer(batch_size) - 1L, n)
-      batch <- texts[start:end]
-      idx   <- idx + 1L
+  for (b_start in seq(1L, n, by = block_size)) {
+    b_end <- min(b_start + block_size - 1L, n)
 
-      enc   <- tokenizer$encode_batch(batch)
-      ids   <- lapply(enc, function(e) e$ids)
-      masks <- lapply(enc, function(e) e$attention_mask)
-      Lmax  <- max(vapply(ids, length, integer(1L)))
+    # encode_batch() pads to the longest text in the block; keep real tokens.
+    enc <- tokenizer$encode_batch(inputs[b_start:b_end])
+    ids <- lapply(enc, function(e) e$ids[e$attention_mask == 1L])
+    rm(enc)
 
-      # Pad every sequence to Lmax by appending zeros (padding token ID).
-      pad   <- function(v) c(v, rep(0L, Lmax - length(v)))
-      ids_m <- do.call(rbind, lapply(ids,   pad))   # (B, Lmax)
-      msk_m <- do.call(rbind, lapply(masks, pad))   # (B, Lmax)
-
-      input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())
-      attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())
-
-      logits <- model(input_ids, attn_mask)   # (B, num_labels) or (B, L, num_labels)
-      logit_buf[[idx]] <- as.array(logits$cpu())
+    for (idx in .batch_plan(lengths(ids), batch_size, max_tokens)) {
+      logits <- .classify_batch(model, ids[idx], layer_gc = gc_every > 0L)
+      rows   <- b_start - 1L + idx              # positions in `texts`
 
       if (task == "ner") {
-        enc_buf[[idx]]  <- enc
-        mask_buf[[idx]] <- msk_m
+        # (B, Lmax, nl): keep each text's real positions only.
+        for (j in seq_along(idx)) {
+          L_j <- length(ids[[idx[j]]])
+          tok_logits[[rows[j]]] <- matrix(logits[j, seq_len(L_j), ], nrow = L_j)
+          ids_all[[rows[j]]]    <- ids[[idx[j]]]
+        }
+      } else {
+        if (is.null(seq_logits)) seq_logits <- matrix(0, nrow = n, ncol = ncol(logits))
+        seq_logits[rows, ] <- logits
       }
 
-      if (verbose) message(sprintf("  classified %d / %d", end, n))
+      n_batch <- n_batch + 1L
+      if (gc_every > 0L && n_batch %% gc_every == 0L) .release_memory("cpu")
+
+      n_done <- n_done + length(idx)
+      if (verbose) message(sprintf("  classified %d / %d", n_done, n))
     }
-  })
+    rm(ids)
+  }
+  .release_memory("cpu")
 
   if (task == "ner") {
-    return(.process_ner(logit_buf, enc_buf, mask_buf, id2label))
+    id2token <- classifier$id2token %||% .load_id2token(classifier$repo_id)
+    return(.process_ner(tok_logits, ids_all, classifier$id2label, id2token))
   }
 
-  # Stack batches into a single (n_texts, num_labels) matrix.
-  all_logits <- do.call(rbind, logit_buf)
-  .process_seq_classification(all_logits, texts, id2label, problem)
+  .process_seq_classification(seq_logits, texts, classifier$id2label,
+                              classifier$problem_type)
+}
+
+
+# -----------------------------------------------------------------------------
+# .classify_batch  --  one forward pass, returned as a plain R array
+#
+# ids: list of token-ID vectors (real tokens only).  Pads to the batch's
+# longest sequence and returns (B, num_labels) or, for token classification,
+# (B, Lmax, num_labels).  Tensors stay local so .release_memory() can free
+# them once the function returns.
+# -----------------------------------------------------------------------------
+
+.classify_batch <- function(model, ids, layer_gc = TRUE) {
+  # Free each encoder layer's intermediates before the next one runs.
+  old <- options(rhobots.layer_gc = layer_gc)
+  on.exit(options(old), add = TRUE)
+
+  lens  <- lengths(ids)
+  Lmax  <- max(lens)
+  ids_m <- do.call(rbind, lapply(ids,  function(v) c(v, rep(0L, Lmax - length(v)))))
+  msk_m <- do.call(rbind, lapply(lens, function(l) rep(c(1L, 0L), c(l, Lmax - l))))
+
+  input_ids <- torch::torch_tensor(ids_m, dtype = torch::torch_long())
+  attn_mask <- torch::torch_tensor(msk_m, dtype = torch::torch_long())
+
+  torch::with_no_grad({
+    logits <- model(input_ids, attn_mask)
+  })
+  out <- as.array(logits$cpu())
+  # A single (B = 1) sequence-classification batch comes back as a vector.
+  if (is.null(dim(out)) || length(dim(out)) == 1L) out <- matrix(out, nrow = 1L)
+  out
 }
 
 
@@ -438,58 +531,30 @@ classify_texts.default <- function(classifier, texts, ...) {
 
 # .process_ner
 #
-# Converts a list of (B, L, num_labels) logit arrays (one element per batch)
-# to a list of per-text data.frames with columns token / label / score.
-# Padding and special tokens ([CLS], [SEP], etc.) are excluded.
-.process_ner <- function(logit_buf, enc_buf, mask_buf, id2label) {
-  nl <- dim(logit_buf[[1]])[3]
+# Converts per-text (L_i, num_labels) logit matrices (real tokens only) to a
+# list of per-text data.frames with columns token / label / score.
+# Special tokens ([CLS], [SEP], etc.) are excluded.
+.process_ner <- function(tok_logits, ids_all, id2label, id2token) {
+  nl <- ncol(tok_logits[[1]])
   label_names <- if (!is.null(id2label)) {
     unname(id2label[as.character(seq(0, nl - 1))])
   } else {
     paste0("LABEL_", seq(0, nl - 1))
   }
 
-  result <- list()
+  lapply(seq_along(tok_logits), function(i) {
+    probs  <- .softmax(tok_logits[[i]])        # softmax per token: (L, nl)
 
-  for (bi in seq_along(logit_buf)) {
-    logits_arr <- logit_buf[[bi]]  # (B, L, nl) as R array
-    enc        <- enc_buf[[bi]]
-    masks      <- mask_buf[[bi]]   # integer matrix (B, L)
+    # Look up token strings by ID (tok encodings carry IDs only).
+    tokens <- id2token[ids_all[[i]] + 1L]
 
-    B <- dim(logits_arr)[1]
+    # Exclude special delimiter tokens  --  these are not real words.
+    keep   <- !tokens %in% .SPECIAL_TOKENS
+    probs  <- probs[keep, , drop = FALSE]
 
-    for (i in seq_len(B)) {
-      # Extract (L, nl) logit slice for this text.
-      if (B == 1L) {
-        tok_logits <- matrix(logits_arr, nrow = dim(logits_arr)[2])
-      } else {
-        tok_logits <- matrix(logits_arr[i, , ], nrow = dim(logits_arr)[2])
-      }
-
-      # Softmax per token position.
-      tok_probs <- .softmax(tok_logits)   # (L, nl)
-
-      # Real (non-padding) positions.
-      real_pos <- which(masks[i, ] == 1)
-
-      # Get token strings from the tokenizer Encoding.
-      tokens <- enc[[i]]$tokens[real_pos]
-
-      # Exclude special delimiter tokens  --  these are not real words.
-      keep   <- !tokens %in% .SPECIAL_TOKENS
-      tokens <- tokens[keep]
-      probs  <- tok_probs[real_pos[keep], , drop = FALSE]
-
-      pred_idx <- apply(probs, 1, which.max)
-      labels   <- label_names[pred_idx]
-      scores   <- apply(probs, 1, max)
-
-      result <- c(result, list(
-        data.frame(token = tokens, label = labels, score = scores,
-                   stringsAsFactors = FALSE)
-      ))
-    }
-  }
-
-  result
+    data.frame(token = tokens[keep],
+               label = label_names[apply(probs, 1, which.max)],
+               score = apply(probs, 1, max),
+               stringsAsFactors = FALSE)
+  })
 }

@@ -37,7 +37,7 @@ The task type and output format are auto-detected from \code{config.json}:
 }
 
 Supported backbone architectures: the same as \code{\link[=load_hf_bert]{load_hf_bert()}}  --  BERT,
-RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT (backbone only), MPNet.
+RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT, MPNet.
 }
 \examples{
 \dontrun{

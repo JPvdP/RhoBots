@@ -1182,3 +1182,237 @@ bert_for_token_classification <- torch::nn_module(
     self$classifier(x)                 # (B, L, num_labels)  --  one dist. per token
   }
 )
+
+
+# =============================================================================
+# DistilBERT ARCHITECTURE  (Sanh et al., 2019  --  arXiv:1910.01108)
+#
+# WHAT MAKES DISTILBERT DIFFERENT FROM BERT?
+# ------------------------------------------
+# DistilBERT is a smaller BERT (6 layers instead of 12) trained by
+# "distillation": it learns to imitate a full BERT model.  The maths of each
+# layer is the same as BERT, but four practical differences matter here:
+#
+#  1. NO TOKEN-TYPE EMBEDDINGS
+#     Only word + position embeddings are summed before the LayerNorm.
+#
+#  2. DIFFERENT NAMES
+#     config.json uses dim / n_layers / n_heads / hidden_dim instead of
+#     hidden_size / num_hidden_layers / num_attention_heads /
+#     intermediate_size, and the checkpoint keys differ too:
+#
+#       transformer.layer.N.attention.{q,k,v,out}_lin   (BERT: query/key/value/dense)
+#       transformer.layer.N.sa_layer_norm               (after attention)
+#       transformer.layer.N.ffn.lin1 / ffn.lin2         (feed-forward network)
+#       transformer.layer.N.output_layer_norm           (after the FFN)
+#
+#     The R modules below use exactly these names so checkpoint keys load
+#     one-to-one once .normalize_key() strips the "distilbert." prefix.
+#
+#  3. CLASSIFICATION HEAD
+#     DistilBertForSequenceClassification has no tanh pooler.  It takes the
+#     first token's hidden state and applies
+#       pre_classifier (dense) -> ReLU -> dropout -> classifier (dense).
+#
+#  4. ACTIVATION
+#     config$activation is "gelu" (almost always) or "relu".
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# .distilbert_config  --  translate DistilBERT config fields to BERT names
+#
+# The rest of the package (embed_texts(), print methods, chunking) reads
+# hidden_size, num_hidden_layers, etc.  Copying DistilBERT's fields under the
+# BERT names lets every caller treat the config the same way.
+# -----------------------------------------------------------------------------
+
+.distilbert_config <- function(cfg_raw) {
+  if (!identical(cfg_raw$model_type, "distilbert")) return(cfg_raw)
+  cfg_raw$hidden_size         <- cfg_raw$hidden_size         %||% cfg_raw$dim
+  cfg_raw$num_hidden_layers   <- cfg_raw$num_hidden_layers   %||% cfg_raw$n_layers
+  cfg_raw$num_attention_heads <- cfg_raw$num_attention_heads %||% cfg_raw$n_heads
+  cfg_raw$intermediate_size   <- cfg_raw$intermediate_size   %||% cfg_raw$hidden_dim
+  cfg_raw$hidden_dropout_prob <- cfg_raw$hidden_dropout_prob %||% cfg_raw$dropout
+  # DistilBERT's sequence-classification dropout lives in seq_classif_dropout.
+  cfg_raw$classifier_dropout  <- cfg_raw$classifier_dropout  %||% cfg_raw$seq_classif_dropout
+  cfg_raw
+}
+
+
+#' DistilBERT input embeddings (word + position, then LayerNorm)
+#' @keywords internal
+#' @noRd
+distilbert_embeddings <- torch::nn_module(
+  "DistilBertEmbeddings",
+  initialize = function(config) {
+    self$word_embeddings     <- torch::nn_embedding(config$vocab_size,
+                                                    config$hidden_size)
+    self$position_embeddings <- torch::nn_embedding(config$max_position_embeddings,
+                                                    config$hidden_size)
+    self$LayerNorm <- torch::nn_layer_norm(config$hidden_size,
+                                           eps = config$layer_norm_eps)
+  },
+  forward = function(input_ids) {
+    L       <- input_ids$size(2)
+    # Positions 0 .. L-1 (torch_arange is inclusive on both ends in R).
+    pos_ids <- torch::torch_arange(start = 0L, end = L - 1L,
+                                   dtype  = torch::torch_long(),
+                                   device = input_ids$device)$unsqueeze(1)
+    # nn_embedding in R torch expects 1-based indices.
+    x <- self$word_embeddings(input_ids + 1L) +
+         self$position_embeddings(pos_ids + 1L)
+    self$LayerNorm(x)
+  }
+)
+
+
+#' DistilBERT multi-head self-attention (q_lin / k_lin / v_lin / out_lin)
+#' @keywords internal
+#' @noRd
+distilbert_attention <- torch::nn_module(
+  "DistilBertAttention",
+  initialize = function(config) {
+    H <- config$hidden_size
+    self$num_heads <- config$num_attention_heads
+    self$head_dim  <- H %/% config$num_attention_heads
+    self$q_lin   <- torch::nn_linear(H, H)
+    self$k_lin   <- torch::nn_linear(H, H)
+    self$v_lin   <- torch::nn_linear(H, H)
+    self$out_lin <- torch::nn_linear(H, H)
+  },
+  forward = function(x, mask) {
+    # Same scaled dot-product attention as bert_self_attention; mask is the
+    # additive (B, 1, 1, L) mask built in distilbert_model.
+    B <- x$size(1); L <- x$size(2); H <- x$size(3)
+    reshape_heads <- function(t) {
+      t$view(c(B, L, self$num_heads, self$head_dim))$transpose(2, 3)
+    }
+    q <- reshape_heads(self$q_lin(x))
+    k <- reshape_heads(self$k_lin(x))
+    v <- reshape_heads(self$v_lin(x))
+
+    scores <- torch::torch_matmul(q, k$transpose(3, 4)) / sqrt(self$head_dim)
+    attn   <- torch::nnf_softmax(scores + mask, dim = -1)
+    out    <- torch::torch_matmul(attn, v)
+    self$out_lin(out$transpose(2, 3)$contiguous()$view(c(B, L, H)))
+  }
+)
+
+
+#' DistilBERT feed-forward network (lin1 -> activation -> lin2)
+#' @keywords internal
+#' @noRd
+distilbert_ffn <- torch::nn_module(
+  "DistilBertFFN",
+  initialize = function(config) {
+    self$lin1 <- torch::nn_linear(config$hidden_size, config$intermediate_size)
+    self$lin2 <- torch::nn_linear(config$intermediate_size, config$hidden_size)
+    self$act  <- if (identical(config$activation, "relu")) torch::nnf_relu else torch::nnf_gelu
+  },
+  forward = function(x) self$lin2(self$act(self$lin1(x)))
+)
+
+
+#' DistilBERT transformer block (attention + FFN, each with residual + LayerNorm)
+#' @keywords internal
+#' @noRd
+distilbert_layer <- torch::nn_module(
+  "DistilBertLayer",
+  initialize = function(config) {
+    eps <- config$layer_norm_eps
+    self$attention         <- distilbert_attention(config)
+    self$sa_layer_norm     <- torch::nn_layer_norm(config$hidden_size, eps = eps)
+    self$ffn               <- distilbert_ffn(config)
+    self$output_layer_norm <- torch::nn_layer_norm(config$hidden_size, eps = eps)
+  },
+  forward = function(x, mask) {
+    a <- self$sa_layer_norm(self$attention(x, mask) + x)
+    self$output_layer_norm(self$ffn(a) + a)
+  }
+)
+
+
+#' DistilBERT layer stack (stored under "transformer.layer.N")
+#' @keywords internal
+#' @noRd
+distilbert_transformer <- torch::nn_module(
+  "DistilBertTransformer",
+  initialize = function(config) {
+    self$layer <- torch::nn_module_list(
+      lapply(seq_len(config$num_hidden_layers), function(.) distilbert_layer(config))
+    )
+  },
+  forward = function(x, mask) {
+    for (i in seq_along(self$layer)) {
+      x <- self$layer[[i]](x, mask)
+      .layer_gc()
+    }
+    x
+  }
+)
+
+
+#' Complete DistilBERT encoder (embeddings + transformer)
+#'
+#' Same interface as bert_model(): forward(input_ids, attention_mask) returns
+#' the final hidden states (B, L, H), so embed_texts() works unchanged.
+#' @keywords internal
+#' @noRd
+distilbert_model <- torch::nn_module(
+  "DistilBertModel",
+  initialize = function(config) {
+    self$config      <- config
+    self$embeddings  <- distilbert_embeddings(config)
+    self$transformer <- distilbert_transformer(config)
+  },
+  forward = function(input_ids, attention_mask) {
+    ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
+      unsqueeze(2)$unsqueeze(2) * -1e4      # (B, 1, 1, L): 0 real, -1e4 pad
+    self$transformer(self$embeddings(input_ids), ext)
+  }
+)
+
+
+#' DistilBERT sequence classifier (first token -> pre_classifier -> ReLU -> classifier)
+#' @keywords internal
+#' @noRd
+distilbert_for_classification <- torch::nn_module(
+  "DistilBertForSequenceClassification",
+  initialize = function(config) {
+    dp <- config$classifier_dropout %||% 0.2
+    self$embeddings     <- distilbert_embeddings(config)
+    self$transformer    <- distilbert_transformer(config)
+    self$pre_classifier <- torch::nn_linear(config$hidden_size, config$hidden_size)
+    self$dropout        <- torch::nn_dropout(p = dp)
+    self$classifier     <- torch::nn_linear(config$hidden_size, config$num_labels)
+  },
+  forward = function(input_ids, attention_mask) {
+    ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
+      unsqueeze(2)$unsqueeze(2) * -1e4
+    x <- self$transformer(self$embeddings(input_ids), ext)
+    x <- torch::nnf_relu(self$pre_classifier(x[, 1, ]))   # first token: (B, H)
+    self$classifier(self$dropout(x))                      # (B, num_labels)
+  }
+)
+
+
+#' DistilBERT token classifier (NER, POS tagging)
+#' @keywords internal
+#' @noRd
+distilbert_for_token_classification <- torch::nn_module(
+  "DistilBertForTokenClassification",
+  initialize = function(config) {
+    dp <- config$hidden_dropout_prob %||% 0.1
+    self$embeddings  <- distilbert_embeddings(config)
+    self$transformer <- distilbert_transformer(config)
+    self$dropout     <- torch::nn_dropout(p = dp)
+    self$classifier  <- torch::nn_linear(config$hidden_size, config$num_labels)
+  },
+  forward = function(input_ids, attention_mask) {
+    ext <- (1 - attention_mask$to(dtype = torch::torch_float()))$
+      unsqueeze(2)$unsqueeze(2) * -1e4
+    x <- self$transformer(self$embeddings(input_ids), ext)
+    self$classifier(self$dropout(x))                      # (B, L, num_labels)
+  }
+)
