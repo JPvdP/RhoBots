@@ -56,7 +56,7 @@
 #' }
 #'
 #' Supported backbone architectures: the same as [load_hf_bert()]  --  BERT,
-#' RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT (backbone only), MPNet.
+#' RoBERTa, XLM-RoBERTa, CamemBERT, DistilBERT, MPNet.
 #'
 #' @param repo_id HuggingFace repo ID, e.g. `"cardiffnlp/twitter-xlm-roberta-base-sentiment"`
 #'   or `"RobroKools/vad-bert"`.
@@ -97,7 +97,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
 
   # -- config ------------------------------------------------------------------
   cfg_path   <- hfhub::hub_download(repo_id, "config.json")
-  cfg_raw    <- jsonlite::fromJSON(cfg_path)
+  cfg_raw    <- .distilbert_config(jsonlite::fromJSON(cfg_path))
   model_type <- cfg_raw$model_type %||% "bert"
 
   .supported <- c("bert", "roberta", "xlm-roberta", "camembert",
@@ -137,6 +137,7 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
     hidden_dropout_prob            = cfg_raw$hidden_dropout_prob   %||% 0.1,
     classifier_dropout             = cfg_raw$classifier_dropout,   # may be NULL
     model_type                     = model_type,
+    activation                     = cfg_raw$activation,
     num_labels                     = as.integer(num_labels),
     relative_attention_num_buckets = cfg_raw$relative_attention_num_buckets %||% 32L
   )
@@ -163,15 +164,20 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
 
   # -- build model -------------------------------------------------------------
   # Dispatch on task x model_type to pick the right head architecture.
-  model <- if (task == "ner") {
+  model <- if (task == "ner" && model_type == "distilbert") {
+    distilbert_for_token_classification(cfg)
+  } else if (task == "ner") {
     # Token classification head is identical for BERT and RoBERTa  -- 
     # both store "classifier.*" at the top level of the checkpoint.
     bert_for_token_classification(cfg)
+  } else if (model_type == "distilbert") {
+    # DistilBERT: first token -> pre_classifier -> ReLU -> classifier.
+    distilbert_for_classification(cfg)
   } else if (model_type %in% c("roberta", "xlm-roberta", "camembert")) {
     # RoBERTa-family uses its own head (no separate pooler).
     roberta_for_classification(cfg)
   } else {
-    # BERT, DistilBERT, MPNet-like -> BERT-style head with pooler.
+    # BERT, MPNet-like -> BERT-style head with pooler.
     bert_for_classification(cfg)
   }
 
