@@ -200,18 +200,52 @@ load_hf_classifier <- function(repo_id, weights_path = NULL, prefix = "") {
     make_wordpiece_tokenizer(vocab_path, do_lower_case = do_lower)
   })
 
+  # NER output needs the token strings, which tok's encodings do not carry.
+  id2token <- if (task == "ner") .load_id2token(repo_id) else NULL
+
   structure(
     list(model        = model,
          tokenizer    = tokenizer,
          config       = cfg,
          repo_id      = repo_id,
          id2label     = id2label,
+         id2token     = id2token,
          problem_type = problem_type,
          task         = task,
          num_labels   = as.integer(num_labels),
          prefix       = prefix),
     class = c("hf_classifier", "list")
   )
+}
+
+
+# -----------------------------------------------------------------------------
+# .load_id2token  --  vocabulary lookup from token ID to token string
+#
+# The tok package returns only token IDs and attention masks, so NER output
+# looks the token strings up here.  Element i + 1 is the string for ID i, as
+# in Python's tokenizer.convert_ids_to_tokens() (e.g. "##ie" for a WordPiece
+# continuation, "ĠParis" for a RoBERTa word that follows a space).
+# -----------------------------------------------------------------------------
+
+.load_id2token <- function(repo_id) {
+  tj <- tryCatch(hfhub::hub_download(repo_id, "tokenizer.json"),
+                 error = function(e) NULL)
+  if (!is.null(tj)) {
+    j     <- jsonlite::fromJSON(tj, simplifyVector = FALSE)
+    vocab <- unlist(j$model$vocab)                     # token -> id
+    added <- j$added_tokens %||% list()
+    ids   <- c(unname(vocab), vapply(added, function(a) as.integer(a$id), 1L))
+    toks  <- c(names(vocab),  vapply(added, function(a) a$content, ""))
+    out   <- character(max(ids) + 1L)
+    out[ids + 1L] <- toks
+    return(out)
+  }
+  # WordPiece models without tokenizer.json: line i of vocab.txt is ID i - 1.
+  vp <- tryCatch(hfhub::hub_download(repo_id, "vocab.txt"), error = function(e) NULL)
+  if (is.null(vp))
+    stop("Model ", repo_id, " provides neither tokenizer.json nor vocab.txt.")
+  readLines(vp, encoding = "UTF-8", warn = FALSE)
 }
 
 
@@ -354,7 +388,8 @@ classify_texts.hf_classifier <- function(classifier, texts,
   })
 
   if (task == "ner") {
-    return(.process_ner(logit_buf, enc_buf, mask_buf, id2label))
+    id2token <- classifier$id2token %||% .load_id2token(classifier$repo_id)
+    return(.process_ner(logit_buf, enc_buf, mask_buf, id2label, id2token))
   }
 
   # Stack batches into a single (n_texts, num_labels) matrix.
@@ -447,7 +482,7 @@ classify_texts.default <- function(classifier, texts, ...) {
 # Converts a list of (B, L, num_labels) logit arrays (one element per batch)
 # to a list of per-text data.frames with columns token / label / score.
 # Padding and special tokens ([CLS], [SEP], etc.) are excluded.
-.process_ner <- function(logit_buf, enc_buf, mask_buf, id2label) {
+.process_ner <- function(logit_buf, enc_buf, mask_buf, id2label, id2token) {
   nl <- dim(logit_buf[[1]])[3]
   label_names <- if (!is.null(id2label)) {
     unname(id2label[as.character(seq(0, nl - 1))])
@@ -478,8 +513,8 @@ classify_texts.default <- function(classifier, texts, ...) {
       # Real (non-padding) positions.
       real_pos <- which(masks[i, ] == 1)
 
-      # Get token strings from the tokenizer Encoding.
-      tokens <- enc[[i]]$tokens[real_pos]
+      # Look up token strings by ID (tok encodings carry IDs only).
+      tokens <- id2token[enc[[i]]$ids[real_pos] + 1L]
 
       # Exclude special delimiter tokens  --  these are not real words.
       keep   <- !tokens %in% .SPECIAL_TOKENS
