@@ -10,6 +10,12 @@
 
 ## Bug fixes
 
+* `build_dtm()`, and so the c-TF-IDF step of `fit_bertopic()` and
+  `zero_shot_topics()`, took time quadratic in the number of documents:
+  the sparse-matrix triplets were grown document by document.  It is now
+  built in one pass, with identical output: 30,000 documents take about 1 s
+  instead of 2 minutes, and 150,000 no longer take hours.
+
 * `classify_texts()` on NER / token-classification models returned no
   tokens: the token strings were read from a field the tokenizer does not
   provide.  Output now matches Python `transformers`.
