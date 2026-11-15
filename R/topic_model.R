@@ -63,8 +63,13 @@ build_dtm <- function(docs, min_df = 2, max_df_frac = 0.95,
   # counts.  Built in one pass: growing the triplet vectors document by
   # document is quadratic and takes hours on 100k+ documents.
   all_toks <- as.character(unlist(tokens, use.names = FALSE))
+  doc_i <- rep.int(seq_along(tokens), lengths(tokens))
+  # NA documents give NA tokens; they are not terms (sort() drops them from
+  # the vocabulary, as before)
+  ok <- !is.na(all_toks)
+  all_toks <- all_toks[ok]; doc_i <- doc_i[ok]
   vocab <- sort(unique(all_toks))
-  dtm <- Matrix::sparseMatrix(i = rep.int(seq_along(tokens), lengths(tokens)),
+  dtm <- Matrix::sparseMatrix(i = doc_i,
                               j = match(all_toks, vocab), x = 1,
                               dims = c(length(docs), length(vocab)),
                               dimnames = list(NULL, vocab))
