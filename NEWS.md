@@ -2,6 +2,12 @@
 
 ## New features
 
+* New `set_topic_labels()` gives topics custom names, from a named vector
+  or a filled-in spreadsheet (data frame with `Topic` and `Label`).  The
+  names appear in all accessors and plots.
+* `visualize_topics_over_time()` gains a `fit` argument and then shows
+  topic names in the legend instead of "Topic 0", "Topic 1", ... (its
+  documented example already used `fit = fit`, which failed before).
 * DistilBERT models now work in `load_hf_bert()` and
   `load_hf_classifier()` (sequence and token classification).  DistilBERT
   was listed as supported before but failed to load.  This opens up many
