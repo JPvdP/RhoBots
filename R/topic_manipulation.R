@@ -57,8 +57,15 @@ set_topic_labels <- function(fit, labels) {
     stop("`fit` must be a bertopic_fit object from fit_bertopic().")
 
   if (is.data.frame(labels)) {
-    if (!all(c("Topic", "Label") %in% names(labels)))
-      stop("A data frame passed as `labels` needs columns `Topic` and `Label`.")
+    if (!all(c("Topic", "Label") %in% names(labels))) {
+      # read.csv() on a semicolon file gives one column ("Topic.Label")
+      # whose values still contain the semicolons.
+      semi <- ncol(labels) == 1L &&
+        any(grepl(";", c(names(labels), as.character(labels[[1L]])), fixed = TRUE))
+      hint <- if (semi)
+        "  The file looks semicolon-separated: read it with read.csv2() instead." else ""
+      stop("A data frame passed as `labels` needs columns `Topic` and `Label`.", hint)
+    }
     lab <- as.character(labels$Label)
     ids <- as.character(labels$Topic)
     keep <- !is.na(lab) & nzchar(trimws(lab))

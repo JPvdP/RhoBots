@@ -50,6 +50,14 @@ test_that("set_topic_labels gives clear errors", {
   expect_error(set_topic_labels(list(), c("0" = "A")), "bertopic_fit")
 })
 
+test_that("set_topic_labels suggests read.csv2 for a semicolon CSV read with read.csv", {
+  path <- tempfile(fileext = ".csv")
+  write.csv2(data.frame(Topic = 0L, Label = "Agriculture"), path, row.names = FALSE)
+  expect_error(set_topic_labels(mock_label_fit(), read.csv(path)), "read.csv2")
+  fit <- set_topic_labels(mock_label_fit(), read.csv2(path))
+  expect_equal(fit$topic_labels[["0"]], "0_Agriculture")
+})
+
 test_that("visualize_topics_over_time shows custom names when fit is given", {
   skip_if_not_installed("plotly")
   tot <- data.frame(Topic     = rep(0:1, each = 2L),
