@@ -1,4 +1,4 @@
-# Rhobots (development version)
+# Rhobots 0.1.11
 
 ## New features
 
