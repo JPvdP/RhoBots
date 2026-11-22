@@ -212,3 +212,13 @@ test_that("topic_quality works in reduced space", {
   expect_s3_class(q, "topic_quality")
   expect_true(is.finite(q$silhouette$global))
 })
+
+test_that("build_dtm skips NA documents like empty ones", {
+  docs <- c("the cat sat on the mat", NA, "the dog chased the cat", "")
+  dtm <- build_dtm(docs, min_df = 1L)
+  expect_equal(nrow(dtm), 4L)
+  expect_false(anyNA(colnames(dtm)))
+  expect_equal(sum(dtm[2, ]), 0)
+  expect_equal(sum(dtm[4, ]), 0)
+  expect_equal(unname(dtm[1, "cat"]), 1)
+})

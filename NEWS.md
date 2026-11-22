@@ -8,6 +8,17 @@
   1-5 scale).  It returns a tidy data frame, records which model was used,
   and keeps loaded models in memory for the session.  Any HuggingFace
   emotion model also works.  `emotion_models()` lists the presets.
+
+# Rhobots 0.1.11
+
+## New features
+
+* New `set_topic_labels()` gives topics custom names, from a named vector
+  or a filled-in spreadsheet (data frame with `Topic` and `Label`).  The
+  names appear in all accessors and plots.
+* `visualize_topics_over_time()` gains a `fit` argument and then shows
+  topic names in the legend instead of "Topic 0", "Topic 1", ... (its
+  documented example already used `fit = fit`, which failed before).
 * DistilBERT models now work in `load_hf_bert()` and
   `load_hf_classifier()` (sequence and token classification).  DistilBERT
   was listed as supported before but failed to load.  This opens up many
@@ -15,6 +26,12 @@
   `bhadresh-savani/distilbert-base-uncased-emotion`.
 
 ## Bug fixes
+
+* `build_dtm()`, and so the c-TF-IDF step of `fit_bertopic()` and
+  `zero_shot_topics()`, took time quadratic in the number of documents:
+  the sparse-matrix triplets were grown document by document.  It is now
+  built in one pass, with identical output: 30,000 documents take about 1 s
+  instead of 2 minutes, and 150,000 no longer take hours.
 
 * `classify_texts()` on NER / token-classification models returned no
   tokens: the token strings were read from a field the tokenizer does not

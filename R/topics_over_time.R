@@ -221,6 +221,10 @@ topics_over_time <- function(fit,
 #' @param normalize If \code{TRUE} (default), the Y-axis shows each topic's
 #'   share of documents in that time period.  If \code{FALSE}, raw document
 #'   counts are shown.
+#' @param fit Optional \code{bertopic_fit}.  When given, the legend and hover
+#'   text show the topic labels (including custom names from
+#'   \code{\link{set_topic_labels}} or \code{\link{label_topics_llm}})
+#'   instead of "Topic 0", "Topic 1", ...
 #' @param width,height Plot dimensions in pixels.
 #' @return A \code{plotly} figure.
 #' @examples
@@ -235,6 +239,7 @@ topics_over_time <- function(fit,
 visualize_topics_over_time <- function(tot,
                                         topics    = NULL,
                                         normalize = TRUE,
+                                        fit       = NULL,
                                         width     = 900L,
                                         height    = 550L) {
   if (!requireNamespace("plotly", quietly = TRUE))
@@ -275,7 +280,11 @@ visualize_topics_over_time <- function(tot,
   for (t in all_topics) {
     rows  <- tot[tot$Topic == t, ]
     rows  <- rows[order(rows$Timestamp), ]
-    label <- paste0("Topic ", t)
+    label <- if (!is.null(fit) && !is.null(fit$topic_labels[[as.character(t)]])) {
+      .format_topic_label(fit$topic_labels[[as.character(t)]], max_chars = 40L)
+    } else {
+      paste0("Topic ", t)
+    }
 
     hover <- paste0(
       "<b>", label, "</b>  --  ", rows$Timestamp, "<br>",

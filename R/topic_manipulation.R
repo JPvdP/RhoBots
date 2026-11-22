@@ -4,7 +4,97 @@
 # reduce_topics()    --  iteratively merge the most similar topics
 # reduce_outliers()  --  reassign noise (-1) documents to the nearest real topic
 # merge_topics()     --  manually collapse a specific set of topics into one
+# set_topic_labels() --  give topics custom, human-readable names
 # =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# set_topic_labels
+# -----------------------------------------------------------------------------
+
+#' Give topics custom names
+#'
+#' Replaces the automatic topic labels (e.g. `"0_agriculture_crop_food_soil"`)
+#' with names you choose.  The names are used everywhere labels appear:
+#' [get_topic_info()], [get_document_info()], [find_topics()] and all
+#' visualisations ([visualize_topics()], [visualize_barchart()],
+#' [visualize_hierarchy()], [visualize_topics_over_time()],
+#' [visualize_comparison()], [visualize_quality()]).
+#'
+#' Topics you leave out keep their current label, so you can name a few
+#' topics at a time.  Labels are stored as `"<id>_<name>"`, the same format
+#' [label_topics_llm()] uses.
+#'
+#' **Set names last.** [reduce_topics()], [merge_topics()] and
+#' [reduce_outliers()] rebuild all labels from the topic terms, so run them
+#' first and name the topics afterwards.
+#'
+#' @param fit A `bertopic_fit` object from [fit_bertopic()].
+#' @param labels The new names, in one of two forms:
+#'   \itemize{
+#'     \item a named character vector (or list) whose names are topic IDs,
+#'       e.g. `c("0" = "Smallholder agriculture", "3" = "Education")`;
+#'     \item a data frame with columns `Topic` and `Label`, e.g. a CSV you
+#'       filled in and read back with `read.csv()`.  Rows with an empty or
+#'       `NA` label are skipped.
+#'   }
+#' @return The input `fit` with updated `$topic_labels`.
+#' @export
+#' @examples
+#' \dontrun{
+#'   fit <- set_topic_labels(fit, c("0" = "Smallholder agriculture",
+#'                                  "1" = "HIV and malaria",
+#'                                  "-1" = "Unassigned"))
+#'
+#'   # Or via a spreadsheet: export, fill in the Label column, read back
+#'   info <- get_topic_info(fit)
+#'   write.csv(data.frame(Topic = info$Topic, Name = info$Name, Label = ""),
+#'             "topic_labels.csv", row.names = FALSE)
+#'   fit <- set_topic_labels(fit, read.csv("topic_labels.csv"))
+#' }
+set_topic_labels <- function(fit, labels) {
+  if (!inherits(fit, "bertopic_fit"))
+    stop("`fit` must be a bertopic_fit object from fit_bertopic().")
+
+  if (is.data.frame(labels)) {
+    if (!all(c("Topic", "Label") %in% names(labels))) {
+      # read.csv() on a semicolon file gives one column ("Topic.Label")
+      # whose values still contain the semicolons.
+      semi <- ncol(labels) == 1L &&
+        any(grepl(";", c(names(labels), as.character(labels[[1L]])), fixed = TRUE))
+      hint <- if (semi)
+        "  The file looks semicolon-separated: read it with read.csv2() instead." else ""
+      stop("A data frame passed as `labels` needs columns `Topic` and `Label`.", hint)
+    }
+    lab <- as.character(labels$Label)
+    ids <- as.character(labels$Topic)
+    keep <- !is.na(lab) & nzchar(trimws(lab))
+    labels <- stats::setNames(lab[keep], ids[keep])
+  } else if (is.list(labels)) {
+    labels <- unlist(labels)
+  }
+
+  if (!is.character(labels) || is.null(names(labels)) || any(!nzchar(names(labels))))
+    stop("`labels` must be a named character vector whose names are topic IDs, ",
+         "e.g. c(\"0\" = \"Agriculture\"), or a data frame with columns ",
+         "`Topic` and `Label`.")
+  if (anyNA(labels) || any(!nzchar(trimws(labels))))
+    stop("Topic names must not be empty or NA.")
+  if (anyDuplicated(names(labels)))
+    stop("Topic ID(s) given more than once: ",
+         paste(unique(names(labels)[duplicated(names(labels))]), collapse = ", "))
+
+  valid   <- as.character(sort(unique(fit$clusters)))
+  unknown <- setdiff(names(labels), valid)
+  if (length(unknown) > 0L)
+    stop("Unknown topic ID(s): ", paste(unknown, collapse = ", "),
+         ".  This model has topics: ", paste(valid, collapse = ", "), ".")
+
+  for (t in names(labels)) {
+    fit$topic_labels[[t]] <- paste0(t, "_", trimws(labels[[t]]))
+  }
+  fit
+}
 
 # -----------------------------------------------------------------------------
 # Internal helpers

@@ -8,6 +8,7 @@ visualize_topics_over_time(
   tot,
   topics = NULL,
   normalize = TRUE,
+  fit = NULL,
   width = 900L,
   height = 550L
 )
@@ -22,6 +23,11 @@ shows the 10 most frequent topics overall.}
 \item{normalize}{If \code{TRUE} (default), the Y-axis shows each topic's
 share of documents in that time period.  If \code{FALSE}, raw document
 counts are shown.}
+
+\item{fit}{Optional \code{bertopic_fit}.  When given, the legend and hover
+text show the topic labels (including custom names from
+\code{\link{set_topic_labels}} or \code{\link{label_topics_llm}})
+instead of "Topic 0", "Topic 1", ...}
 
 \item{width, height}{Plot dimensions in pixels.}
 }
